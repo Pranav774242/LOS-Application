@@ -427,7 +427,8 @@
 .bank-master-page{max-width:1480px;margin:0 auto;color:#243b42}
 .bank-master-alert,.bank-master-success{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 14px;padding:12px 15px;border:1px solid #edcaca;border-radius:7px;background:#fff7f7;color:#a52e35;font-size:13px;line-height:1.5}
 .bank-master-alert button{flex:none;color:#165f5c;font-size:12px;font-weight:700;text-decoration:underline}
-.bank-master-success{justify-content:flex-start;border-color:#bfe0d0;background:#f0faf5;color:#246e53}
+.bank-master-success{justify-content:flex-start;border-color:#bfe0d0 !important;background:#f0faf5 !important;color:#246e53 !important}
+.bank-master-success svg{color:#246e53 !important}
 .bank-master-card{overflow:hidden;border:1px solid #dfe8e8;border-radius:8px;background:#fff;box-shadow:0 5px 18px rgba(24,51,58,.035)}
 .bank-master-loading,.bank-master-empty{display:flex;align-items:center;justify-content:center;gap:10px;min-height:330px;padding:24px;color:#61777b;font-size:13px}
 .bank-master-loading svg{animation:bank-master-spin 1s linear infinite;color:#177e7a}
