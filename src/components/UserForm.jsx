@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -14,34 +15,97 @@ import {
   Shield,
   User,
   Clock,
-  AlertCircle
+  AlertCircle,
 } from 'lucide-react';
+
 import PageHeader from './PageHeader';
-import { saveEmployee, isEmpIdUnique, isUsernameUnique } from '../services/employeeService';
-import { createUser, USER_ORGANIZATION_CODE, USER_ORGANIZATION_ID, USER_ORGANIZATION_NAME } from '../services/leadService';
+
 import {
-  filterUserInput,
-  filterMobileInput,
+  saveEmployee,
+  isEmpIdUnique,
+  isUsernameUnique,
+} from '../services/employeeService';
+
+import {
+  createUser,
+  USER_ORGANIZATION_CODE,
+  USER_ORGANIZATION_ID,
+  USER_ORGANIZATION_NAME,
+} from '../services/leadService';
+
+import {
   getMaxDateFor18YearsOld,
   calculateAge,
-  isValidEmployeeName,
   isAtLeast18YearsOld,
-  isValidMobile,
-  normalizeIndianMobile,
-  isValidEmail,
-  validatePasswordStrength
+  validatePasswordStrength,
 } from '../utils/validation';
 
+/* =========================================================
+   CONSTANTS
+========================================================= */
+
+const NAME_MAX_LENGTH = 50;
+const MOBILE_MAX_LENGTH = 13;
+const EMAIL_MAX_LENGTH = 254;
+
+const DESIGNATIONS = [
+  'Branch Manager',
+  'Loan Officer',
+  'Credit Analyst',
+  'Senior Underwriter',
+  'Audit Specialist',
+  'Operations Executive',
+  'Risk Analyst',
+  'System Administrator',
+];
+
+const USER_ROLES = [
+  'Super Admin',
+  'Bank Admin',
+  'Branch User',
+];
+
+const SYSTEM_ROLES = [
+  'SUPER_ADMIN',
+  'Maker',
+  'Checker',
+  'Viewer',
+];
+
+const BRANCHES = [
+  'Pune',
+  'Mumbai',
+  'Koramangala',
+  'Salt Lake',
+  'Andheri West',
+  'Pimpri',
+  'Indiranagar',
+  'Head Office',
+];
+
+/* =========================================================
+   DATE HELPERS
+========================================================= */
+
 function parseLocalDate(value) {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value ?? ''));
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(
+    String(value ?? '')
+  );
+
   if (!match) return null;
 
   const [, year, month, day] = match;
-  const date = new Date(Number(year), Number(month) - 1, Number(day));
+
+  const date = new Date(
+    Number(year),
+    Number(month) - 1,
+    Number(day)
+  );
+
   if (
-    date.getFullYear() !== Number(year)
-    || date.getMonth() !== Number(month) - 1
-    || date.getDate() !== Number(day)
+    date.getFullYear() !== Number(year) ||
+    date.getMonth() !== Number(month) - 1 ||
+    date.getDate() !== Number(day)
   ) {
     return null;
   }
@@ -53,30 +117,208 @@ function formatLocalDate(date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
+
   return `${year}-${month}-${day}`;
 }
 
-export default function UserForm({ mode = 'add', initialData = null }) {
-  const router = useRouter();
+/* =========================================================
+   NAME INPUT VALIDATION
+========================================================= */
 
+function filterNameInput(value) {
+  return String(value ?? '')
+    .replace(/[^a-zA-Z\s'-]/g, '')
+    .slice(0, NAME_MAX_LENGTH);
+}
+
+function isValidName(value) {
+  return /^[a-zA-Z]+(?:[ '-][a-zA-Z]+)*$/.test(
+    String(value ?? '').trim()
+  );
+}
+
+/* =========================================================
+   MOBILE INPUT VALIDATION
+========================================================= */
+
+function filterMobileInput(value) {
+  let input = String(value ?? '').replace(/[\s()-]/g, '');
+
+  // Allow only a plus sign at the beginning.
+  if (input.startsWith('+')) {
+    const digits = input.slice(1).replace(/\D/g, '');
+
+    // Allow the user to type the +91 prefix gradually.
+    if (digits.length === 0) return '+';
+    if (digits === '9') return '+9';
+
+    if (!digits.startsWith('91')) {
+      return '';
+    }
+
+    const mobileDigits = digits.slice(2).slice(0, 10);
+
+    if (
+      mobileDigits.length > 0 &&
+      !/^[6-9]/.test(mobileDigits)
+    ) {
+      return '+91';
+    }
+
+    return `+91${mobileDigits}`;
+  }
+
+  // Optional 0 prefix.
+  if (input.startsWith('0')) {
+    const digits = input.slice(1).replace(/\D/g, '').slice(0, 10);
+
+    if (digits.length === 0) return '0';
+
+    if (!/^[6-9]/.test(digits)) {
+      return '0';
+    }
+
+    return `0${digits}`;
+  }
+
+  // Standard 10-digit number.
+  input = input.replace(/\D/g, '').slice(0, 10);
+
+  if (input.length > 0 && !/^[6-9]/.test(input)) {
+    return '';
+  }
+
+  return input;
+}
+
+function normalizeIndianMobile(value) {
+  let mobile = String(value ?? '').replace(/\s/g, '');
+
+  if (mobile.startsWith('+91')) {
+    mobile = mobile.slice(3);
+  } else if (mobile.startsWith('0')) {
+    mobile = mobile.slice(1);
+  }
+
+  return mobile;
+}
+
+function isValidMobile(value) {
+  return /^[6-9]\d{9}$/.test(String(value ?? ''));
+}
+
+/* =========================================================
+   EMAIL VALIDATION
+========================================================= */
+
+function isValidEmail(value) {
+  const email = String(value ?? '').trim();
+
+  if (!email || email.length > EMAIL_MAX_LENGTH) {
+    return false;
+  }
+
+  // Exactly one @ symbol.
+  const parts = email.split('@');
+
+  if (parts.length !== 2) {
+    return false;
+  }
+
+  const [localPart, domain] = parts;
+
+  if (!localPart || !domain) {
+    return false;
+  }
+
+  if (localPart.length > 64 || domain.length > 253) {
+    return false;
+  }
+
+  // RFC-style dot-atom local part.
+  const localRegex =
+    /^[a-zA-Z0-9!#$%&'*+/=?^_`{|}~.-]+$/;
+
+  if (!localRegex.test(localPart)) {
+    return false;
+  }
+
+  if (
+    localPart.startsWith('.') ||
+    localPart.endsWith('.') ||
+    localPart.includes('..')
+  ) {
+    return false;
+  }
+
+  // Validate domain labels.
+  const labels = domain.split('.');
+
+  if (labels.length < 2) {
+    return false;
+  }
+
+  for (const label of labels) {
+    if (
+      !label ||
+      label.length > 63 ||
+      !/^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(label)
+    ) {
+      return false;
+    }
+  }
+
+  // Require a plausible alphabetic top-level domain.
+  const tld = labels[labels.length - 1];
+
+  if (!/^[a-zA-Z]{2,63}$/.test(tld)) {
+    return false;
+  }
+
+  return true;
+}
+
+/* =========================================================
+   COMPONENT
+========================================================= */
+
+export default function UserForm({
+  mode = 'add',
+  initialData = null,
+}) {
+  const router = useRouter();
   const isEdit = mode === 'edit';
 
-  // Dynamic max date for 18 years requirement (calculated from current date so it never needs manual updates)
-  const maxDobDate = useMemo(() => getMaxDateFor18YearsOld(), []);
-  const maxDobCalendarDate = useMemo(() => parseLocalDate(maxDobDate), [maxDobDate]);
+  const maxDobDate = useMemo(
+    () => getMaxDateFor18YearsOld(),
+    []
+  );
+
+  const maxDobCalendarDate = useMemo(
+    () => parseLocalDate(maxDobDate),
+    [maxDobDate]
+  );
+
   const minDobCalendarDate = useMemo(() => {
     const date = new Date();
     date.setFullYear(date.getFullYear() - 100);
     return date;
   }, []);
+
   const maxDobFormatted = useMemo(() => {
-    try {
-      const parts = maxDobDate.split('-');
-      const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
-      return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-    } catch {
-      return maxDobDate;
-    }
+    const parts = maxDobDate.split('-');
+
+    const date = new Date(
+      Number(parts[0]),
+      Number(parts[1]) - 1,
+      Number(parts[2])
+    );
+
+    return date.toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
   }, [maxDobDate]);
 
   const [form, setForm] = useState({
@@ -92,18 +334,37 @@ export default function UserForm({ mode = 'add', initialData = null }) {
     password: '',
     confirmPassword: '',
     email: initialData?.email || '',
-    allow2FA: initialData?.allow2FA ?? (initialData?.twoFAEnabled === 'Y'),
+
+    allow2FA:
+      initialData?.allow2FA ??
+      (initialData?.twoFAEnabled === 'Y'),
 
     designation: initialData?.designation || '',
     userRole: initialData?.userRole || initialData?.role || '',
-    systemRole: initialData?.systemRole || 'BRANCH_USER',
+    systemRole: initialData?.systemRole || 'SUPER_ADMIN',
     status: initialData?.status || 'Active',
-    allowMultiBranch: initialData?.allowMultiBranch ?? (initialData?.multiBranchAccess === 'Y'),
-    loginBranch: initialData?.loginBranch || initialData?.branch || '',
-    allowLoginOnHolidays: initialData?.allowLoginOnHolidays ?? (initialData?.loginOnHolidays === 'Y'),
 
-    sessionTimeout: initialData?.sessionTimeout ?? initialData?.idleTimeout ?? initialData?.inactiveSessionTimeout ?? 900,
+    allowMultiBranch:
+      initialData?.allowMultiBranch ??
+      (initialData?.multiBranchAccess === 'Y'),
+
+    loginBranch:
+      initialData?.loginBranch ||
+      initialData?.branch ||
+      '',
+
+    allowLoginOnHolidays:
+      initialData?.allowLoginOnHolidays ??
+      (initialData?.loginOnHolidays === 'Y'),
+
+    sessionTimeout:
+      initialData?.sessionTimeout ??
+      initialData?.idleTimeout ??
+      initialData?.inactiveSessionTimeout ??
+      900,
+
     badLogins: initialData?.badLogins ?? 3,
+
     loginTime: initialData?.loginTime || '09:00 AM',
     logoutTime: initialData?.logoutTime || '06:00 PM',
   });
@@ -114,10 +375,18 @@ export default function UserForm({ mode = 'add', initialData = null }) {
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+
   const submittingRef = useRef(false);
   const dobPickerRef = useRef(null);
-  const [isDobCalendarOpen, setIsDobCalendarOpen] = useState(false);
+
+  const [isDobCalendarOpen, setIsDobCalendarOpen] =
+    useState(false);
+
   const selectedDob = parseLocalDate(form.dateOfBirth);
+
+  /* =========================================================
+     DOB OUTSIDE CLICK
+  ========================================================= */
 
   useEffect(() => {
     if (!isDobCalendarOpen) return undefined;
@@ -129,22 +398,38 @@ export default function UserForm({ mode = 'add', initialData = null }) {
     };
 
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+
+    return () => {
+      document.removeEventListener(
+        'mousedown',
+        handleClickOutside
+      );
+    };
   }, [isDobCalendarOpen]);
 
-  // Validate single field
+  /* =========================================================
+     FIELD VALIDATION
+  ========================================================= */
+
   const validateField = (name, value, values = form) => {
     let err = '';
 
     switch (name) {
       case 'empNo':
-        if (!value || !String(value).trim()) {
+        if (!String(value ?? '').trim()) {
           err = 'Emp ID is required.';
-        } else if (String(value).trim().length < 3 || String(value).trim().length > 20) {
+        } else if (
+          String(value).trim().length < 3 ||
+          String(value).trim().length > 20
+        ) {
           err = 'Emp ID must be between 3 and 20 characters.';
-        } else if (!/^[a-zA-Z0-9_-]+$/.test(String(value).trim())) {
-          err = 'Emp ID can only contain letters, numbers, hyphens, and underscores (e.g. EMP001).';
-        } else if (!isEmpIdUnique(String(value).trim(), initialData?.id)) {
+        } else if (
+          !/^[a-zA-Z0-9_-]+$/.test(String(value).trim())
+        ) {
+          err = 'Emp ID can only contain letters, numbers, hyphens, and underscores.';
+        } else if (
+          !isEmpIdUnique(String(value).trim(), initialData?.id)
+        ) {
           err = 'This Emp ID is already in use by another employee.';
         }
         break;
@@ -158,18 +443,19 @@ export default function UserForm({ mode = 'add', initialData = null }) {
       case 'firstName':
         if (!String(value ?? '').trim()) {
           err = 'First Name is required.';
-        } else if (String(value).trim().length < 3 || String(value).trim().length > 50) {
-          err = 'First Name must be between 3 and 50 characters.';
-        } else if (!isValidEmployeeName(value)) {
+        } else if (String(value).trim().length > 50) {
+          err = 'First Name must not exceed 50 characters.';
+        } else if (!isValidName(value)) {
           err = 'First Name may contain letters, spaces, hyphens, and apostrophes only.';
         }
         break;
 
       case 'middleName':
+        // Middle Name is optional.
         if (String(value ?? '').trim()) {
-          if (String(value).trim().length < 3 || String(value).trim().length > 50) {
-            err = 'Middle Name must be between 3 and 50 characters when provided.';
-          } else if (!isValidEmployeeName(value)) {
+          if (String(value).trim().length > 50) {
+            err = 'Middle Name must not exceed 50 characters.';
+          } else if (!isValidName(value)) {
             err = 'Middle Name may contain letters, spaces, hyphens, and apostrophes only.';
           }
         }
@@ -178,19 +464,20 @@ export default function UserForm({ mode = 'add', initialData = null }) {
       case 'lastName':
         if (!String(value ?? '').trim()) {
           err = 'Last Name is required.';
-        } else if (String(value).trim().length < 3 || String(value).trim().length > 50) {
-          err = 'Last Name must be between 3 and 50 characters.';
-        } else if (!isValidEmployeeName(value)) {
+        } else if (String(value).trim().length > 50) {
+          err = 'Last Name must not exceed 50 characters.';
+        } else if (!isValidName(value)) {
           err = 'Last Name may contain letters, spaces, hyphens, and apostrophes only.';
         }
         break;
 
       case 'mobile': {
         const cleanMobile = normalizeIndianMobile(value);
+
         if (!cleanMobile) {
           err = 'Mobile number is required.';
         } else if (!isValidMobile(cleanMobile)) {
-          err = 'Enter exactly 10 digits starting with 6, 7, 8, or 9. An optional +91 or 0 prefix is allowed.';
+          err = 'Enter exactly 10 digits starting with 6, 7, 8, or 9. Optional +91 or 0 prefix is accepted.';
         }
         break;
       }
@@ -199,31 +486,42 @@ export default function UserForm({ mode = 'add', initialData = null }) {
         if (!value) {
           err = 'Date of Birth is required.';
         } else {
-          const dob = new Date(value);
+          const dob = parseLocalDate(value);
+
           const today = new Date();
-          const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-          if (isNaN(dob.getTime())) {
+
+          const todayString = formatLocalDate(today);
+
+          if (!dob) {
             err = 'Please enter a valid Date of Birth.';
           } else if (value > todayString) {
             err = 'Date of Birth cannot be in the future.';
           } else if (!isAtLeast18YearsOld(value)) {
             const age = calculateAge(value);
-            err = `Applicant must be at least 18 years old (current age is ${age} year${age === 1 ? '' : 's'}). Must be born on or before ${maxDobFormatted}.`;
+
+            err = `Applicant must be at least 18 years old (current age is ${age} years). Must be born on or before ${maxDobFormatted}.`;
           } else if (calculateAge(value) > 100) {
-            err = 'Please enter a realistic Date of Birth (maximum age is 100 years).';
+            err = 'Maximum allowed age is 100 years.';
           }
         }
         break;
 
       case 'userName':
-        if (!value || !String(value).trim()) {
+        if (!String(value ?? '').trim()) {
           err = 'User Name is required.';
-        } else if (String(value).trim().length < 3 || String(value).trim().length > 30) {
+        } else if (
+          String(value).trim().length < 3 ||
+          String(value).trim().length > 30
+        ) {
           err = 'User Name must be between 3 and 30 characters.';
-        } else if (!/^[a-zA-Z0-9._-]+$/.test(String(value).trim())) {
+        } else if (
+          !/^[a-zA-Z0-9._-]+$/.test(String(value).trim())
+        ) {
           err = 'Username contains unsupported characters.';
-        } else if (!isUsernameUnique(String(value).trim(), initialData?.id)) {
-          err = 'This User Name is already taken. Please choose a different username.';
+        } else if (
+          !isUsernameUnique(String(value).trim(), initialData?.id)
+        ) {
+          err = 'This User Name is already taken.';
         }
         break;
 
@@ -232,8 +530,13 @@ export default function UserForm({ mode = 'add', initialData = null }) {
           err = 'Password is required.';
         } else if (value) {
           err = validatePasswordStrength(value);
-          if (!err && String(values.userName ?? '').trim().toLowerCase() === String(value).toLowerCase()) {
-            err = 'Password must not be the same as the username (case-insensitive).';
+
+          if (
+            !err &&
+            String(values.userName ?? '').trim().toLowerCase() ===
+              String(value).toLowerCase()
+          ) {
+            err = 'Password must not be the same as the username.';
           }
         }
         break;
@@ -247,58 +550,77 @@ export default function UserForm({ mode = 'add', initialData = null }) {
         break;
 
       case 'email':
-        if (!value || !String(value).trim()) {
+        if (!String(value ?? '').trim()) {
           err = 'Email ID is required.';
         } else if (String(value).trim().length > 254) {
           err = 'Email address must not exceed 254 characters.';
-        } else if (!isValidEmail(String(value).trim())) {
-          err = 'Enter a valid email address with one @, a valid local part, and valid domain labels.';
+        } else if (!isValidEmail(value)) {
+          err = 'Enter a valid email address with a valid domain.';
         }
         break;
 
       case 'designation':
-        if (!value || !['Branch Manager', 'Loan Officer', 'Credit Analyst', 'Senior Underwriter', 'Audit Specialist', 'Operations Executive', 'Risk Analyst', 'System Administrator'].includes(value)) {
+        if (!DESIGNATIONS.includes(value)) {
           err = 'Please select a Designation.';
         }
         break;
 
       case 'userRole':
-        if (!value || !['Manager', 'Officer', 'Maker', 'Checker', 'Viewer', 'Admin'].includes(value)) {
-          err = 'Please select a User Role.';
+        if (!USER_ROLES.includes(value)) {
+          err = 'Please select a valid User Role.';
         }
         break;
 
       case 'systemRole':
-        if (!value || !['SUPER_ADMIN', 'BRANCH_USER', 'CREDIT_USER', 'OPERATIONS_USER', 'AUDIT_USER'].includes(value)) {
+        if (!SYSTEM_ROLES.includes(value)) {
           err = 'Please select a System Role.';
         }
         break;
 
       case 'status':
-        if (!value || !['Active', 'Inactive', 'Suspended'].includes(value)) {
+        if (!['Active', 'Inactive', 'Suspended'].includes(value)) {
           err = 'Please select an Account Status.';
         }
         break;
 
       case 'loginBranch':
-        if (!values.allowMultiBranch && (!value || !['Pune', 'Mumbai', 'Koramangala', 'Salt Lake', 'Andheri West', 'Pimpri', 'Indiranagar', 'Head Office'].includes(value))) {
+        if (
+          !values.allowMultiBranch &&
+          !BRANCHES.includes(value)
+        ) {
           err = 'Please select a Login Branch.';
         }
         break;
 
       case 'sessionTimeout':
-        if (value === '' || value === null || value === undefined) {
+        if (
+          value === '' ||
+          value === null ||
+          value === undefined
+        ) {
           err = 'Session Timeout is required.';
-        } else if (!/^\d+$/.test(String(value)) || Number(value) < 60 || Number(value) > 86400) {
-          err = 'Session Timeout must be between 60 and 86,400 seconds (1 minute to 24 hours).';
+        } else if (
+          !/^\d+$/.test(String(value)) ||
+          Number(value) < 60 ||
+          Number(value) > 86400
+        ) {
+          err = 'Session Timeout must be between 60 and 86,400 seconds.';
         }
         break;
 
       case 'badLogins':
-        if (value === '' || value === null || value === undefined) {
+        if (
+          value === '' ||
+          value === null ||
+          value === undefined
+        ) {
           err = 'No. of Bad Login is required.';
-        } else if (!/^\d+$/.test(String(value)) || Number(value) < 0 || Number(value) > 10) {
-          err = 'No. of Bad Login must be an integer between 0 and 10.';
+        } else if (
+          !/^\d+$/.test(String(value)) ||
+          Number(value) < 0 ||
+          Number(value) > 10
+        ) {
+          err = 'No. of Bad Login must be between 0 and 10.';
         }
         break;
 
@@ -309,72 +631,144 @@ export default function UserForm({ mode = 'add', initialData = null }) {
     return err;
   };
 
+  /* =========================================================
+     INPUT CHANGE HANDLER
+  ========================================================= */
+
   const handleChange = (e) => {
     const input = e.currentTarget;
-    const { name, type, checked } = input;
-    const rawValue = input.value;
-    const val = type === 'checkbox'
-      ? checked
-      : name === 'mobile'
-        ? filterMobileInput(rawValue)
-        : filterUserInput(name, rawValue);
 
-    if (val === null) {
+    const { name, type, checked } = input;
+
+    const rawValue = input.value;
+
+    let val;
+
+    if (type === 'checkbox') {
+      val = checked;
+    } else if (
+      ['firstName', 'middleName', 'lastName'].includes(name)
+    ) {
+      val = filterNameInput(rawValue);
+    } else if (name === 'mobile') {
+      val = filterMobileInput(rawValue);
+    } else if (name === 'email') {
+      val = rawValue.slice(0, EMAIL_MAX_LENGTH);
+    } else if (name === 'sessionTimeout' || name === 'badLogins') {
+      val = rawValue.replace(/\D/g, '');
+    } else {
+      val = rawValue;
+    }
+
+    // Immediately restore the previous value if the input is invalid.
+    if (val === null || val === undefined) {
       input.value = String(form[name] ?? '');
       return;
     }
 
-    setSubmitError('');
-    const nextForm = { ...form, [name]: val };
-
-    if (type !== 'checkbox' && val !== rawValue && typeof input.setSelectionRange === 'function') {
+    // Update the displayed input when invalid characters were filtered.
+    if (
+      type !== 'checkbox' &&
+      val !== rawValue &&
+      typeof input.setSelectionRange === 'function'
+    ) {
       const caret = input.selectionStart ?? rawValue.length;
-      const filteredCaret = (name === 'mobile'
-        ? filterMobileInput(rawValue.slice(0, caret))
-        : filterUserInput(name, rawValue.slice(0, caret)))?.length ?? val.length;
-      requestAnimationFrame(() => input.setSelectionRange(filteredCaret, filteredCaret));
+
+      requestAnimationFrame(() => {
+        const safeCaret = Math.min(caret, String(val).length);
+        input.setSelectionRange(safeCaret, safeCaret);
+      });
     }
 
-    setForm((prev) => ({ ...prev, [name]: val }));
+    setSubmitError('');
+
+    const nextForm = {
+      ...form,
+      [name]: val,
+    };
+
+    setForm((prev) => ({
+      ...prev,
+      [name]: val,
+    }));
 
     if (name === 'allowMultiBranch') {
       setErrors((prev) => {
         const nextErrors = { ...prev };
-        const branchError = checked || (!hasSubmitted && !touched.loginBranch)
-          ? ''
-          : validateField('loginBranch', form.loginBranch, nextForm);
-        if (branchError) nextErrors.loginBranch = branchError;
-        else delete nextErrors.loginBranch;
+
+        const branchError =
+          checked || (!hasSubmitted && !touched.loginBranch)
+            ? ''
+            : validateField(
+                'loginBranch',
+                form.loginBranch,
+                nextForm
+              );
+
+        if (branchError) {
+          nextErrors.loginBranch = branchError;
+        } else {
+          delete nextErrors.loginBranch;
+        }
+
         return nextErrors;
       });
+
       return;
     }
 
-    if (hasSubmitted || touched[name] || name === 'password' || name === 'confirmPassword') {
+    if (
+      hasSubmitted ||
+      touched[name] ||
+      name === 'password' ||
+      name === 'confirmPassword'
+    ) {
       setErrors((prev) => {
         const nextErrors = { ...prev };
-        const error = validateField(name, val, nextForm);
-        if (error) nextErrors[name] = error;
-        else delete nextErrors[name];
 
-        if (
-          name === 'password'
-          && !isEdit
-          && (hasSubmitted || touched.confirmPassword || nextForm.confirmPassword)
-        ) {
-          const confirmPasswordError = validateField(
-            'confirmPassword',
-            nextForm.confirmPassword,
-            nextForm,
-          );
-          if (confirmPasswordError) nextErrors.confirmPassword = confirmPasswordError;
-          else delete nextErrors.confirmPassword;
+        const error = validateField(name, val, nextForm);
+
+        if (error) {
+          nextErrors[name] = error;
+        } else {
+          delete nextErrors[name];
         }
 
-        if (name === 'userName' && (hasSubmitted || touched.password)) {
-          const passwordError = validateField('password', nextForm.password, nextForm);
-          if (passwordError) nextErrors.password = passwordError;
-          else delete nextErrors.password;
+        if (
+          name === 'password' &&
+          !isEdit &&
+          (hasSubmitted ||
+            touched.confirmPassword ||
+            nextForm.confirmPassword)
+        ) {
+          const confirmError = validateField(
+            'confirmPassword',
+            nextForm.confirmPassword,
+            nextForm
+          );
+
+          if (confirmError) {
+            nextErrors.confirmPassword = confirmError;
+          } else {
+            delete nextErrors.confirmPassword;
+          }
+        }
+
+        if (
+          name === 'userName' &&
+          (hasSubmitted || touched.password)
+        ) {
+          const passwordError = validateField(
+            'password',
+            nextForm.password,
+            nextForm
+          );
+
+          if (passwordError) {
+            nextErrors.password = passwordError;
+          } else {
+            delete nextErrors.password;
+          }
         }
 
         return nextErrors;
@@ -382,90 +776,186 @@ export default function UserForm({ mode = 'add', initialData = null }) {
     }
   };
 
+  /* =========================================================
+     BLUR HANDLER
+  ========================================================= */
+
   const handleBlur = (e) => {
     const { name, value, type, checked } = e.currentTarget;
-    const inputValue = type === 'checkbox'
-      ? checked
-      : name === 'mobile'
-        ? filterMobileInput(value)
-        : filterUserInput(name, value);
-    const val = ['firstName', 'middleName', 'lastName', 'email'].includes(name)
-      ? inputValue.trim()
-      : inputValue;
-    const nextForm = { ...form, [name]: val };
 
-    if (val !== form[name]) {
-      setForm((prev) => ({ ...prev, [name]: val }));
+    let inputValue = value;
+
+    if (type === 'checkbox') {
+      inputValue = checked;
+    } else if (
+      ['firstName', 'middleName', 'lastName'].includes(name)
+    ) {
+      inputValue = filterNameInput(value).trim();
+    } else if (name === 'mobile') {
+      inputValue = filterMobileInput(value);
+    } else if (name === 'email') {
+      inputValue = value.trim();
     }
 
-    setTouched((prev) => ({ ...prev, [name]: true }));
-    const errorMsg = validateField(name, val, nextForm);
+    const nextForm = {
+      ...form,
+      [name]: inputValue,
+    };
+
+    if (inputValue !== form[name]) {
+      setForm((prev) => ({
+        ...prev,
+        [name]: inputValue,
+      }));
+    }
+
+    setTouched((prev) => ({
+      ...prev,
+      [name]: true,
+    }));
+
+    const errorMsg = validateField(
+      name,
+      inputValue,
+      nextForm
+    );
 
     setErrors((prev) => {
       const nextErrors = { ...prev };
-      if (errorMsg) nextErrors[name] = errorMsg;
-      else delete nextErrors[name];
 
-      if (name === 'userName' && (hasSubmitted || touched.password)) {
-        const passwordError = validateField('password', nextForm.password, nextForm);
-        if (passwordError) nextErrors.password = passwordError;
-        else delete nextErrors.password;
+      if (errorMsg) {
+        nextErrors[name] = errorMsg;
+      } else {
+        delete nextErrors[name];
       }
 
-      if (name === 'password' && !isEdit && (hasSubmitted || touched.confirmPassword)) {
-        const confirmPasswordError = validateField(
+      if (
+        name === 'userName' &&
+        (hasSubmitted || touched.password)
+      ) {
+        const passwordError = validateField(
+          'password',
+          nextForm.password,
+          nextForm
+        );
+
+        if (passwordError) {
+          nextErrors.password = passwordError;
+        } else {
+          delete nextErrors.password;
+        }
+      }
+
+      if (
+        name === 'password' &&
+        !isEdit &&
+        (hasSubmitted || touched.confirmPassword)
+      ) {
+        const confirmError = validateField(
           'confirmPassword',
           nextForm.confirmPassword,
-          nextForm,
+          nextForm
         );
-        if (confirmPasswordError) nextErrors.confirmPassword = confirmPasswordError;
-        else delete nextErrors.confirmPassword;
+
+        if (confirmError) {
+          nextErrors.confirmPassword = confirmError;
+        } else {
+          delete nextErrors.confirmPassword;
+        }
       }
 
       return nextErrors;
     });
   };
+
+  /* =========================================================
+     DOB HANDLERS
+  ========================================================= */
 
   const handleDateOfBirthChange = (date) => {
     if (!(date instanceof Date)) return;
 
     const value = formatLocalDate(date);
-    const nextForm = { ...form, dateOfBirth: value };
-    const error = validateField('dateOfBirth', value, nextForm);
 
-    setForm((prev) => ({ ...prev, dateOfBirth: value }));
-    setTouched((prev) => ({ ...prev, dateOfBirth: true }));
+    const nextForm = {
+      ...form,
+      dateOfBirth: value,
+    };
+
+    const error = validateField(
+      'dateOfBirth',
+      value,
+      nextForm
+    );
+
+    setForm((prev) => ({
+      ...prev,
+      dateOfBirth: value,
+    }));
+
+    setTouched((prev) => ({
+      ...prev,
+      dateOfBirth: true,
+    }));
+
     setErrors((prev) => {
       const nextErrors = { ...prev };
-      if (error) nextErrors.dateOfBirth = error;
-      else delete nextErrors.dateOfBirth;
+
+      if (error) {
+        nextErrors.dateOfBirth = error;
+      } else {
+        delete nextErrors.dateOfBirth;
+      }
+
       return nextErrors;
     });
+
     setSubmitError('');
     setIsDobCalendarOpen(false);
   };
 
   const handleDateOfBirthBlur = (event) => {
-    if (dobPickerRef.current?.contains(event.relatedTarget)) return;
+    if (dobPickerRef.current?.contains(event.relatedTarget)) {
+      return;
+    }
 
-    setTouched((prev) => ({ ...prev, dateOfBirth: true }));
-    const error = validateField('dateOfBirth', form.dateOfBirth);
+    setTouched((prev) => ({
+      ...prev,
+      dateOfBirth: true,
+    }));
+
+    const error = validateField(
+      'dateOfBirth',
+      form.dateOfBirth
+    );
+
     setErrors((prev) => {
       const nextErrors = { ...prev };
-      if (error) nextErrors.dateOfBirth = error;
-      else delete nextErrors.dateOfBirth;
+
+      if (error) {
+        nextErrors.dateOfBirth = error;
+      } else {
+        delete nextErrors.dateOfBirth;
+      }
+
       return nextErrors;
     });
   };
 
+  /* =========================================================
+     SUBMIT HANDLER
+  ========================================================= */
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+
     if (submittingRef.current) return;
 
     setSubmitError('');
     setHasSubmitted(true);
 
     const newErrors = {};
+
     const fieldsToValidate = [
       'empNo',
       'title',
@@ -487,6 +977,7 @@ export default function UserForm({ mode = 'add', initialData = null }) {
     if (!isEdit || form.password) {
       fieldsToValidate.push('password');
     }
+
     if (!isEdit) {
       fieldsToValidate.push('confirmPassword');
     }
@@ -496,57 +987,97 @@ export default function UserForm({ mode = 'add', initialData = null }) {
     }
 
     fieldsToValidate.forEach((field) => {
-      const err = validateField(field, form[field], form);
-      if (err) {
-        newErrors[field] = err;
+      const error = validateField(
+        field,
+        form[field],
+        form
+      );
+
+      if (error) {
+        newErrors[field] = error;
       }
     });
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
-      // Scroll to first error
+
       const firstErrorKey = Object.keys(newErrors)[0];
-      const element = document.getElementById(`field-${firstErrorKey}`);
+
+      const element = document.getElementById(
+        `field-${firstErrorKey}`
+      );
+
       if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        element.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+        });
+
         element.focus();
       }
+
       return;
     }
 
     submittingRef.current = true;
     setSubmitting(true);
 
-    const fullName = [form.firstName, form.middleName, form.lastName]
+    const fullName = [
+      form.firstName,
+      form.middleName,
+      form.lastName,
+    ]
       .map((name) => String(name ?? '').trim())
       .filter(Boolean)
       .join(' ');
 
-    const branchValue = form.allowMultiBranch ? 'Multiple Branches' : (form.loginBranch || 'Head Office');
+    const branchValue = form.allowMultiBranch
+      ? 'Multiple Branches'
+      : form.loginBranch || 'Head Office';
+
     const toApiTime = (timeValue) => {
-      const match = String(timeValue).match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
+      const match = String(timeValue).match(
+        /^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i
+      );
+
       if (!match) return timeValue;
 
       let hours = Number(match[1]);
+
       const period = match[3]?.toUpperCase();
-      if (period === 'PM' && hours < 12) hours += 12;
-      if (period === 'AM' && hours === 12) hours = 0;
+
+      if (period === 'PM' && hours < 12) {
+        hours += 12;
+      }
+
+      if (period === 'AM' && hours === 12) {
+        hours = 0;
+      }
+
       return `${String(hours).padStart(2, '0')}:${match[2]}:00`;
     };
 
     const employeeRecord = {
       ...(initialData || {}),
+
       empNo: String(form.empNo).trim(),
       employeeId: String(form.empNo).trim(),
+
       title: form.title,
+
       name: fullName,
       fullName,
+
       firstName: String(form.firstName).trim(),
       middleName: String(form.middleName || '').trim(),
       lastName: String(form.lastName).trim(),
+
       userName: String(form.userName).trim(),
+
       mobile: normalizeIndianMobile(form.mobile),
+
       email: String(form.email).trim(),
+
       dateOfBirth: form.dateOfBirth,
 
       designation: form.designation,
@@ -570,7 +1101,9 @@ export default function UserForm({ mode = 'add', initialData = null }) {
       sessionTimeout: Number(form.sessionTimeout),
       idleTimeout: Number(form.sessionTimeout),
       inactiveSessionTimeout: String(form.sessionTimeout),
+
       badLogins: Number(form.badLogins),
+
       loginTime: form.loginTime,
       logoutTime: form.logoutTime,
     };
@@ -579,42 +1112,72 @@ export default function UserForm({ mode = 'add', initialData = null }) {
       if (!isEdit) {
         const userPayload = {
           empNo: employeeRecord.empNo,
-          userCode: `USR-${employeeRecord.empNo.replace(/^EMP-?/i, '')}`,
+
+          userCode: `USR-${employeeRecord.empNo.replace(
+            /^EMP-?/i,
+            ''
+          )}`,
+
           username: employeeRecord.userName.toLowerCase(),
+
           password: form.password,
+
           firstName: employeeRecord.firstName,
           middleName: employeeRecord.middleName,
           lastName: employeeRecord.lastName,
+
           email: employeeRecord.email,
           mobile: employeeRecord.mobile,
-          gender: employeeRecord.title === 'Mr.' ? 'MALE' : 'FEMALE',
+
+          gender:
+            employeeRecord.title === 'Mr.'
+              ? 'MALE'
+              : 'FEMALE',
+
           dob: employeeRecord.dateOfBirth,
+
           designation: employeeRecord.designation,
+
           userType: 'STAFF',
+
           role: employeeRecord.userRole.toUpperCase(),
-          status: employeeRecord.status === 'Active'
-            ? 'OPERATIVE'
-            : employeeRecord.status === 'Inactive'
-              ? 'INOPERATIVE'
-              : 'SUSPENDED',
+
+          status:
+            employeeRecord.status === 'Active'
+              ? 'OPERATIVE'
+              : employeeRecord.status === 'Inactive'
+                ? 'INOPERATIVE'
+                : 'SUSPENDED',
+
           twoFaEnabled: employeeRecord.allow2FA,
+
           multiBranchAccess: employeeRecord.allowMultiBranch,
+
           branchId: 1,
           branchName: 'Bank Of India Main Branch',
+
           organizationId: USER_ORGANIZATION_ID,
           organizationCode: USER_ORGANIZATION_CODE,
           organizationName: USER_ORGANIZATION_NAME,
+
           loginOnHolidays: employeeRecord.allowLoginOnHolidays,
+
           loginTime: toApiTime(employeeRecord.loginTime),
           logoutTime: toApiTime(employeeRecord.logoutTime),
+
           inactiveSessionTimeout: employeeRecord.sessionTimeout,
         };
 
-        console.log('Creating user with payload:', userPayload);
+        console.log(
+          'Creating user with payload:',
+          userPayload
+        );
+
         await createUser(userPayload);
       }
 
       saveEmployee(employeeRecord);
+
       if (!isEdit) {
         setForm((currentForm) => ({
           ...currentForm,
@@ -634,32 +1197,47 @@ export default function UserForm({ mode = 'add', initialData = null }) {
 
       router.push('/user_management');
     } catch (error) {
-      setSubmitError(error instanceof Error
-        ? error.message
-        : 'Unable to save the user. Please try again.');
+      setSubmitError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to save the user. Please try again.'
+      );
     } finally {
       submittingRef.current = false;
       setSubmitting(false);
     }
   };
 
+  /* =========================================================
+     REUSABLE INPUT STYLE
+  ========================================================= */
+
+  const helperStyle = {
+    fontSize: '11px',
+    color: '#647e82',
+    marginTop: '4px',
+    display: 'block',
+  };
+
+  /* =========================================================
+     UI
+  ========================================================= */
+
   return (
     <div>
       <PageHeader
-        //eyebrow="ADMINISTRATION"
         title={isEdit ? 'Edit Employee' : 'Add User'}
-        // description={
-        //   isEdit
-        //     ? `Modify account settings, access privileges, and operating parameters for ${initialData?.name || initialData?.fullName || 'employee'}.`
-        //     : 'Register a new employee and configure application access, security credentials, and branch permissions.'
-        // }
         action={
           <button
             type="button"
             className="secondary-button"
             onClick={() => router.push('/user_management')}
             aria-label="Back to User Management"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+            }}
           >
             <ArrowLeft size={16} />
           </button>
@@ -667,36 +1245,48 @@ export default function UserForm({ mode = 'add', initialData = null }) {
       />
 
       <form onSubmit={handleSubmit} noValidate>
+
         {/* ====================================================
-            SECTION 1: Employee and Personal Information
+            SECTION 1: EMPLOYEE AND PERSONAL INFORMATION
         ==================================================== */}
+
         <div className="form-card">
           <div className="form-card-title">
             <User size={18} color="#167c78" />
             <span>Employee and Personal Information</span>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '18px' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+              gap: '18px',
+            }}
+          >
             <div>
               <label className="form-label" htmlFor="field-empNo">
                 Emp ID <span>*</span>
               </label>
+
               <input
                 id="field-empNo"
                 name="empNo"
                 type="text"
                 maxLength={20}
-                aria-invalid={Boolean(errors.empNo)}
                 className={`form-input ${errors.empNo ? 'has-error' : ''}`}
                 value={form.empNo}
                 onChange={handleChange}
                 onBlur={handleBlur}
                 placeholder="e.g. EMP001"
+                aria-invalid={Boolean(errors.empNo)}
               />
+
               {errors.empNo ? (
-                <span className="field-error-text">{errors.empNo}</span>
+                <span className="field-error-text">
+                  {errors.empNo}
+                </span>
               ) : (
-                <span style={{ fontSize: '11px', color: '#647e82', marginTop: '4px', display: 'block' }}>
+                <span style={helperStyle}>
                   Unique employee identifier (e.g. EMP001).
                 </span>
               )}
@@ -706,108 +1296,157 @@ export default function UserForm({ mode = 'add', initialData = null }) {
               <label className="form-label" htmlFor="field-title">
                 Title <span>*</span>
               </label>
+
               <select
                 id="field-title"
                 name="title"
-                aria-invalid={Boolean(errors.title)}
                 className={`form-input ${errors.title ? 'has-error' : ''}`}
                 value={form.title}
                 onChange={handleChange}
                 onBlur={handleBlur}
+                aria-invalid={Boolean(errors.title)}
               >
                 <option value="">Select title</option>
                 <option value="Mr.">Mr.</option>
                 <option value="Mrs.">Mrs.</option>
                 <option value="Ms.">Ms.</option>
               </select>
-              {errors.title && <span className="field-error-text">{errors.title}</span>}
+
+              {errors.title && (
+                <span className="field-error-text">
+                  {errors.title}
+                </span>
+              )}
             </div>
 
             <div>
               <label className="form-label" htmlFor="field-firstName">
                 First Name <span>*</span>
               </label>
+
               <input
                 id="field-firstName"
                 name="firstName"
                 type="text"
                 maxLength={50}
                 autoComplete="given-name"
-                aria-invalid={Boolean(errors.firstName)}
                 className={`form-input ${errors.firstName ? 'has-error' : ''}`}
                 value={form.firstName}
                 onChange={handleChange}
                 onBlur={handleBlur}
                 placeholder="Enter first name"
+                aria-invalid={Boolean(errors.firstName)}
               />
-              {errors.firstName && <span className="field-error-text">{errors.firstName}</span>}
+
+              {errors.firstName ? (
+                <span className="field-error-text">
+                  {errors.firstName}
+                </span>
+              ) : (
+                <span style={helperStyle}>
+                  Maximum 50 characters.
+                </span>
+              )}
             </div>
 
             <div>
               <label className="form-label" htmlFor="field-middleName">
                 Middle Name
               </label>
+
               <input
                 id="field-middleName"
                 name="middleName"
                 type="text"
                 maxLength={50}
-                aria-invalid={Boolean(errors.middleName)}
                 className={`form-input ${errors.middleName ? 'has-error' : ''}`}
                 value={form.middleName}
                 onChange={handleChange}
                 onBlur={handleBlur}
                 placeholder="Middle name (optional)"
+                aria-invalid={Boolean(errors.middleName)}
               />
-              {errors.middleName && <span className="field-error-text">{errors.middleName}</span>}
+
+              {errors.middleName ? (
+                <span className="field-error-text">
+                  {errors.middleName}
+                </span>
+              ) : (
+                <span style={helperStyle}>
+                  Optional. Maximum 50 characters.
+                </span>
+              )}
             </div>
 
             <div>
               <label className="form-label" htmlFor="field-lastName">
                 Last Name <span>*</span>
               </label>
+
               <input
                 id="field-lastName"
                 name="lastName"
                 type="text"
                 maxLength={50}
                 autoComplete="family-name"
-                aria-invalid={Boolean(errors.lastName)}
                 className={`form-input ${errors.lastName ? 'has-error' : ''}`}
                 value={form.lastName}
                 onChange={handleChange}
                 onBlur={handleBlur}
                 placeholder="Enter last name"
+                aria-invalid={Boolean(errors.lastName)}
               />
-              {errors.lastName && <span className="field-error-text">{errors.lastName}</span>}
+
+              {errors.lastName ? (
+                <span className="field-error-text">
+                  {errors.lastName}
+                </span>
+              ) : (
+                <span style={helperStyle}>
+                  Maximum 50 characters.
+                </span>
+              )}
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '18px', marginTop: '18px' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+              gap: '18px',
+              marginTop: '18px',
+            }}
+          >
             <div>
               <label className="form-label" htmlFor="field-mobile">
                 Mobile <span>*</span>{' '}
-                <small style={{ color: '#167c78', fontWeight: 600 }}>(Starts with 6, 7, 8, or 9)</small>
+                <small style={{ color: '#167c78', fontWeight: 600 }}>
+                  (Starts with 6, 7, 8, or 9)
+                </small>
               </label>
+
               <input
                 id="field-mobile"
                 name="mobile"
                 type="tel"
                 inputMode="tel"
-                maxLength={13}
+                maxLength={MOBILE_MAX_LENGTH}
                 autoComplete="tel"
-                aria-invalid={Boolean(errors.mobile)}
                 className={`form-input ${errors.mobile ? 'has-error' : ''}`}
                 value={form.mobile}
                 onChange={handleChange}
                 onBlur={handleBlur}
-                placeholder="10 digits, optionally prefixed by +91 or 0"
+                placeholder="Enter mobile number"
+                aria-invalid={Boolean(errors.mobile)}
               />
+
               {errors.mobile ? (
-                <span className="field-error-text">{errors.mobile}</span>
+                <span className="field-error-text">
+                  {errors.mobile}
+                </span>
               ) : (
-                <span style={{ fontSize: '11px', color: '#647e82', marginTop: '4px', display: 'block' }}>
-                  Enter 10 digits starting with 6-9; +91 and 0 prefixes are accepted and normalized.
+                <span style={helperStyle}>
+                  Mobile number starting with 6, 7, 8, or 9. Optional +91 or 0 prefix is accepted.
                 </span>
               )}
             </div>
@@ -815,8 +1454,11 @@ export default function UserForm({ mode = 'add', initialData = null }) {
             <div>
               <label className="form-label" htmlFor="field-dateOfBirth">
                 Date of Birth <span>*</span>{' '}
-                <small style={{ color: '#167c78', fontWeight: 600 }}>(Min. 18 years old)</small>
+                <small style={{ color: '#167c78', fontWeight: 600 }}>
+                  (Min. 18 years old)
+                </small>
               </label>
+
               <div className="dob-picker" ref={dobPickerRef}>
                 <button
                   id="field-dateOfBirth"
@@ -825,40 +1467,55 @@ export default function UserForm({ mode = 'add', initialData = null }) {
                   aria-haspopup="dialog"
                   aria-expanded={isDobCalendarOpen}
                   aria-invalid={Boolean(errors.dateOfBirth)}
-                  aria-describedby={errors.dateOfBirth ? 'field-dateOfBirth-error' : undefined}
                   onClick={() => setIsDobCalendarOpen((open) => !open)}
                   onBlur={handleDateOfBirthBlur}
                 >
                   <span className={selectedDob ? '' : 'dob-picker-placeholder'}>
                     {selectedDob
                       ? selectedDob.toLocaleDateString('en-IN', {
-                        day: '2-digit',
-                        month: 'short',
-                        year: 'numeric',
-                      })
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                        })
                       : 'Select date of birth'}
                   </span>
+
                   <CalendarIcon size={16} aria-hidden="true" />
                 </button>
-                <input type="hidden" name="dateOfBirth" value={form.dateOfBirth} />
+
+                <input
+                  type="hidden"
+                  name="dateOfBirth"
+                  value={form.dateOfBirth}
+                />
+
                 {isDobCalendarOpen && (
-                  <div className="dob-calendar-popover" role="dialog" aria-label="Choose date of birth">
+                  <div
+                    className="dob-calendar-popover"
+                    role="dialog"
+                    aria-label="Choose date of birth"
+                  >
                     <Calendar
                       className="loan-birth-calendar"
                       value={selectedDob}
                       onChange={handleDateOfBirthChange}
                       minDate={minDobCalendarDate}
                       maxDate={maxDobCalendarDate}
-                      defaultActiveStartDate={selectedDob || maxDobCalendarDate}
+                      defaultActiveStartDate={
+                        selectedDob || maxDobCalendarDate
+                      }
                       locale="en-IN"
                     />
                   </div>
                 )}
               </div>
+
               {errors.dateOfBirth ? (
-                <span id="field-dateOfBirth-error" className="field-error-text">{errors.dateOfBirth}</span>
+                <span className="field-error-text">
+                  {errors.dateOfBirth}
+                </span>
               ) : (
-                <span style={{ fontSize: '11px', color: '#647e82', marginTop: '4px', display: 'block' }}>
+                <span style={helperStyle}>
                   Applicant must be at least 18 years old (born on or before {maxDobFormatted}).
                 </span>
               )}
@@ -867,8 +1524,9 @@ export default function UserForm({ mode = 'add', initialData = null }) {
         </div>
 
         {/* ====================================================
-            SECTION 2: Login Information
+            SECTION 2: LOGIN INFORMATION
         ==================================================== */}
+
         <div className="form-card">
           <div className="form-card-title">
             <Lock size={18} color="#167c78" />
@@ -880,24 +1538,31 @@ export default function UserForm({ mode = 'add', initialData = null }) {
               <label className="form-label" htmlFor="field-userName">
                 User Name <span>*</span>
               </label>
+
               <input
                 id="field-userName"
                 name="userName"
                 type="text"
                 maxLength={30}
                 autoComplete="username"
-                aria-invalid={Boolean(errors.userName)}
                 className={`form-input ${errors.userName ? 'has-error' : ''}`}
                 value={form.userName}
                 onChange={handleChange}
                 onBlur={handleBlur}
                 placeholder="Login username"
-                style={{ fontWeight: 600, background: '#fcfdfd' }}
+                aria-invalid={Boolean(errors.userName)}
+                style={{
+                  fontWeight: 600,
+                  background: '#fcfdfd',
+                }}
               />
+
               {errors.userName ? (
-                <span className="field-error-text">{errors.userName}</span>
+                <span className="field-error-text">
+                  {errors.userName}
+                </span>
               ) : (
-                <span style={{ fontSize: '11px', color: '#647e82', marginTop: '4px', display: 'block' }}>
+                <span style={helperStyle}>
                   Unique username for system authentication.
                 </span>
               )}
@@ -905,8 +1570,11 @@ export default function UserForm({ mode = 'add', initialData = null }) {
 
             <div>
               <label className="form-label" htmlFor="field-password">
-                {isEdit ? 'Password (leave blank to keep existing)' : 'Password *'}
+                {isEdit
+                  ? 'Password (leave blank to keep existing)'
+                  : 'Password *'}
               </label>
+
               <div style={{ position: 'relative' }}>
                 <input
                   id="field-password"
@@ -914,14 +1582,19 @@ export default function UserForm({ mode = 'add', initialData = null }) {
                   type={showPassword ? 'text' : 'password'}
                   maxLength={128}
                   autoComplete="new-password"
-                  aria-invalid={Boolean(errors.password)}
                   className={`form-input ${errors.password ? 'has-error' : ''}`}
                   value={form.password}
                   onChange={handleChange}
                   onBlur={handleBlur}
-                  placeholder={isEdit ? 'Leave empty to keep existing' : 'Enter strong password'}
+                  placeholder={
+                    isEdit
+                      ? 'Leave empty to keep existing'
+                      : 'Enter strong password'
+                  }
+                  aria-invalid={Boolean(errors.password)}
                   style={{ paddingRight: '42px' }}
                 />
+
                 <button
                   type="button"
                   onClick={() => setShowPassword((prev) => !prev)}
@@ -937,15 +1610,22 @@ export default function UserForm({ mode = 'add', initialData = null }) {
                     display: 'grid',
                     placeItems: 'center',
                   }}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-label={
+                    showPassword ? 'Hide password' : 'Show password'
+                  }
                 >
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  {showPassword
+                    ? <EyeOff size={16} />
+                    : <Eye size={16} />}
                 </button>
               </div>
+
               {errors.password ? (
-                <span className="field-error-text">{errors.password}</span>
+                <span className="field-error-text">
+                  {errors.password}
+                </span>
               ) : (
-                <span style={{ fontSize: '11px', color: '#647e82', marginTop: '4px', display: 'block' }}>
+                <span style={helperStyle}>
                   8-128 characters; include at least 3 of uppercase, lowercase, numbers, and symbols.
                 </span>
               )}
@@ -956,26 +1636,27 @@ export default function UserForm({ mode = 'add', initialData = null }) {
                 <label className="form-label" htmlFor="field-confirmPassword">
                   Confirm Password <span>*</span>
                 </label>
+
                 <input
                   id="field-confirmPassword"
                   name="confirmPassword"
                   type="password"
                   maxLength={128}
                   autoComplete="new-password"
-                  aria-invalid={Boolean(errors.confirmPassword)}
-                  aria-describedby={errors.confirmPassword ? 'field-confirmPassword-error' : undefined}
                   className={`form-input ${errors.confirmPassword ? 'has-error' : ''}`}
                   value={form.confirmPassword}
                   onChange={handleChange}
                   onBlur={handleBlur}
                   placeholder="Re-enter password"
+                  aria-invalid={Boolean(errors.confirmPassword)}
                 />
+
                 {errors.confirmPassword ? (
-                  <span id="field-confirmPassword-error" className="field-error-text">
+                  <span className="field-error-text">
                     {errors.confirmPassword}
                   </span>
                 ) : (
-                  <span style={{ fontSize: '11px', color: '#647e82', marginTop: '4px', display: 'block' }}>
+                  <span style={helperStyle}>
                     Enter the same password again.
                   </span>
                 )}
@@ -986,59 +1667,56 @@ export default function UserForm({ mode = 'add', initialData = null }) {
               <label className="form-label" htmlFor="field-email">
                 Email ID <span>*</span>
               </label>
+
               <input
                 id="field-email"
                 name="email"
                 type="email"
                 maxLength={254}
                 autoComplete="email"
-                aria-invalid={Boolean(errors.email)}
                 className={`form-input ${errors.email ? 'has-error' : ''}`}
                 value={form.email}
                 onChange={handleChange}
                 onBlur={handleBlur}
                 placeholder="employee@bank.com"
+                aria-invalid={Boolean(errors.email)}
               />
+
               {errors.email ? (
-                <span className="field-error-text">{errors.email}</span>
+                <span className="field-error-text">
+                  {errors.email}
+                </span>
               ) : (
-                <span style={{ fontSize: '11px', color: '#647e82', marginTop: '4px', display: 'block' }}>
-                  Corporate or personal email address.
+                <span style={helperStyle}>
+                  Maximum 254 characters. Enter a valid email address.
                 </span>
               )}
             </div>
           </div>
-
-          {/* <div style={{ marginTop: '20px' }}>
-            <label className="form-switch">
-              <input
-                type="checkbox"
-                name="allow2FA"
-                checked={form.allow2FA}
-                onChange={handleChange}
-              />
-              <span>Allow 2FA Login</span>
-            </label>
-            <p style={{ margin: '4px 0 0 28px', fontSize: '11px', color: '#7a8e91' }}>
-              Enforces two-factor authentication security during user login.
-            </p>
-          </div> */}
         </div>
 
         {/* ====================================================
-            SECTION 3: Role and Access Information
+            SECTION 3: ROLE AND ACCESS INFORMATION
         ==================================================== */}
+
         <div className="form-card">
           <div className="form-card-title">
             <Shield size={18} color="#167c78" />
             <span>Role and Access Information</span>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '18px' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+              gap: '18px',
+            }}
+          >
             <div>
               <label className="form-label" htmlFor="field-designation">
                 Designation <span>*</span>
               </label>
+
               <select
                 id="field-designation"
                 name="designation"
@@ -1048,22 +1726,26 @@ export default function UserForm({ mode = 'add', initialData = null }) {
                 onBlur={handleBlur}
               >
                 <option value="">Select Designation</option>
-                <option value="Branch Manager">Branch Manager</option>
-                <option value="Loan Officer">Loan Officer</option>
-                <option value="Credit Analyst">Credit Analyst</option>
-                <option value="Senior Underwriter">Senior Underwriter</option>
-                <option value="Audit Specialist">Audit Specialist</option>
-                <option value="Operations Executive">Operations Executive</option>
-                <option value="Risk Analyst">Risk Analyst</option>
-                <option value="System Administrator">System Administrator</option>
+
+                {DESIGNATIONS.map((designation) => (
+                  <option key={designation} value={designation}>
+                    {designation}
+                  </option>
+                ))}
               </select>
-              {errors.designation && <span className="field-error-text">{errors.designation}</span>}
+
+              {errors.designation && (
+                <span className="field-error-text">
+                  {errors.designation}
+                </span>
+              )}
             </div>
 
             <div>
               <label className="form-label" htmlFor="field-userRole">
                 User Role <span>*</span>
               </label>
+
               <select
                 id="field-userRole"
                 name="userRole"
@@ -1076,15 +1758,20 @@ export default function UserForm({ mode = 'add', initialData = null }) {
                 <option value="Super Admin">Super Admin User</option>
                 <option value="Bank Admin">Bank Admin User</option>
                 <option value="Branch User">Branch User</option>
-                
               </select>
-              {errors.userRole && <span className="field-error-text">{errors.userRole}</span>}
+
+              {errors.userRole && (
+                <span className="field-error-text">
+                  {errors.userRole}
+                </span>
+              )}
             </div>
 
             <div>
               <label className="form-label" htmlFor="field-systemRole">
                 System Role <span>*</span>
               </label>
+
               <select
                 id="field-systemRole"
                 name="systemRole"
@@ -1099,13 +1786,19 @@ export default function UserForm({ mode = 'add', initialData = null }) {
                 <option value="Checker">Checker</option>
                 <option value="Viewer">Viewer</option>
               </select>
-              {errors.systemRole && <span className="field-error-text">{errors.systemRole}</span>}
+
+              {errors.systemRole && (
+                <span className="field-error-text">
+                  {errors.systemRole}
+                </span>
+              )}
             </div>
 
             <div>
               <label className="form-label" htmlFor="field-status">
                 Status <span>*</span>
               </label>
+
               <select
                 id="field-status"
                 name="status"
@@ -1118,152 +1811,120 @@ export default function UserForm({ mode = 'add', initialData = null }) {
                 <option value="Inactive">Inactive</option>
                 <option value="Suspended">Suspended</option>
               </select>
-              {errors.status && <span className="field-error-text">{errors.status}</span>}
-            </div>
-          </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '18px', marginTop: '18px' }}>
-            <div>
-              <label className="form-label" htmlFor="field-loginBranch">
-                Login Branch {!form.allowMultiBranch && <span>*</span>}
-              </label>
-              <select
-                id="field-loginBranch"
-                name="loginBranch"
-                disabled={form.allowMultiBranch}
-                className={`form-input ${errors.loginBranch ? 'has-error' : ''}`}
-                value={form.allowMultiBranch ? '' : form.loginBranch}
-                onChange={handleChange}
-                onBlur={handleBlur}
-              >
-                <option value="">{form.allowMultiBranch ? 'All branches permitted' : 'Select Branch'}</option>
-                <option value="Pune">Pune</option>
-                <option value="Mumbai">Mumbai</option>
-                <option value="Koramangala">Koramangala</option>
-                <option value="Salt Lake">Salt Lake</option>
-                <option value="Andheri West">Andheri West</option>
-                <option value="Pimpri">Pimpri</option>
-                <option value="Indiranagar">Indiranagar</option>
-                <option value="Head Office">Head Office</option>
-              </select>
-              {errors.loginBranch ? (
-                <span className="field-error-text">{errors.loginBranch}</span>
-              ) : (
-                <span style={{ fontSize: '11px', color: '#647e82', marginTop: '4px', display: 'block' }}>
-                  {form.allowMultiBranch ? 'Multi-branch access is enabled.' : 'Primary operating branch assignment.'}
+              {errors.status && (
+                <span className="field-error-text">
+                  {errors.status}
                 </span>
               )}
             </div>
           </div>
 
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '28px', marginTop: '20px' }}>
-            {/* <div>
-              <label className="form-switch">
-                <input
-                  type="checkbox"
-                  name="allowMultiBranch"
-                  checked={form.allowMultiBranch}
-                  onChange={handleChange}
-                />
-                <span>Allow MultiBranch</span>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+              gap: '18px',
+              marginTop: '18px',
+            }}
+          >
+            <div>
+              <label className="form-label" htmlFor="field-loginBranch">
+                Login Branch {!form.allowMultiBranch && <span>*</span>}
               </label>
-              <p style={{ margin: '4px 0 0 28px', fontSize: '11px', color: '#7a8e91' }}>
-                Grants operational access across all bank branches.
-              </p>
-            </div> */}
 
-            {/* <div>
-              <label className="form-switch">
-                <input
-                  type="checkbox"
-                  name="allowLoginOnHolidays"
-                  checked={form.allowLoginOnHolidays}
-                  onChange={handleChange}
-                />
-                <span>Allow Login On Holidays</span>
-              </label>
-              <p style={{ margin: '4px 0 0 28px', fontSize: '11px', color: '#7a8e91' }}>
-                Permits system access on recognized public holidays and weekends.
-              </p>
-            </div> */}
+              <select
+                id="field-loginBranch"
+                name="loginBranch"
+                disabled={form.allowMultiBranch}
+                className={`form-input ${errors.loginBranch ? 'has-error' : ''}`}
+                value={
+                  form.allowMultiBranch
+                    ? ''
+                    : form.loginBranch
+                }
+                onChange={handleChange}
+                onBlur={handleBlur}
+              >
+                <option value="">
+                  {form.allowMultiBranch
+                    ? 'All branches permitted'
+                    : 'Select Branch'}
+                </option>
+
+                {BRANCHES.map((branch) => (
+                  <option key={branch} value={branch}>
+                    {branch}
+                  </option>
+                ))}
+              </select>
+
+              {errors.loginBranch ? (
+                <span className="field-error-text">
+                  {errors.loginBranch}
+                </span>
+              ) : (
+                <span style={helperStyle}>
+                  {form.allowMultiBranch
+                    ? 'Multi-branch access is enabled.'
+                    : 'Primary operating branch assignment.'}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
         {/* ====================================================
-            SECTION 4: Session and Login Settings
+            SECTION 4: SESSION AND LOGIN SETTINGS
         ==================================================== */}
+
         <div className="form-card">
           <div className="form-card-title">
             <Clock size={18} color="#167c78" />
             <span>Session and Login Settings</span>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '18px' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+              gap: '18px',
+            }}
+          >
             <div>
-                <label className="form-label" htmlFor="field-sessionTimeout">
-                  Session Timeout (in sec) <span>*</span>
-                </label>
-                <input
-                  id="field-sessionTimeout"
-                  name="sessionTimeout"
-                  type="text"
-                  inputMode="numeric"
-                  min={60}
-                  max={86400}
-                  maxLength={5}
-                  aria-invalid={Boolean(errors.sessionTimeout)}
-                  className={`form-input ${errors.sessionTimeout ? 'has-error' : ''}`}
-                  value={form.sessionTimeout ?? ''}
-                  onChange={handleChange}
-                  onBlur={handleBlur}
-                />
-                {errors.sessionTimeout ? (
-                  <span className="field-error-text">{errors.sessionTimeout}</span>
-                ) : (
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      color: '#647e82',
-                      marginTop: '4px',
-                      display: 'block',
-                    }}
-                  >
-                    Duration before the login session expires (60 - 86,400 seconds).
-                  </span>
-                )}
-              </div>
-
-            {/* <div>
-              <label className="form-label" htmlFor="field-badLogins">
-                No. of Bad Login <span>*</span>
+              <label className="form-label" htmlFor="field-sessionTimeout">
+                Session Timeout (in sec) <span>*</span>
               </label>
+
               <input
-                id="field-badLogins"
-                name="badLogins"
+                id="field-sessionTimeout"
+                name="sessionTimeout"
                 type="text"
                 inputMode="numeric"
-                min={0}
-                max={10}
-                maxLength={2}
-                aria-invalid={Boolean(errors.badLogins)}
-                className={`form-input ${errors.badLogins ? 'has-error' : ''}`}
-                value={form.badLogins}
+                maxLength={5}
+                className={`form-input ${errors.sessionTimeout ? 'has-error' : ''}`}
+                value={form.sessionTimeout ?? ''}
                 onChange={handleChange}
                 onBlur={handleBlur}
+                aria-invalid={Boolean(errors.sessionTimeout)}
               />
-              {errors.badLogins ? (
-                <span className="field-error-text">{errors.badLogins}</span>
+
+              {errors.sessionTimeout ? (
+                <span className="field-error-text">
+                  {errors.sessionTimeout}
+                </span>
               ) : (
-                <span style={{ fontSize: '11px', color: '#647e82', marginTop: '4px', display: 'block' }}>
-                  Maximum failed password attempts before account lockout (0 - 10).
+                <span style={helperStyle}>
+                  Duration before the login session expires (60 - 86,400 seconds).
                 </span>
               )}
-            </div> */}
+            </div>
 
             <div>
               <label className="form-label" htmlFor="field-loginTime">
                 Login Time
               </label>
+
               <input
                 id="field-loginTime"
                 name="loginTime"
@@ -1273,7 +1934,8 @@ export default function UserForm({ mode = 'add', initialData = null }) {
                 onChange={handleChange}
                 placeholder="09:00 AM"
               />
-              <span style={{ fontSize: '11px', color: '#647e82', marginTop: '4px', display: 'block' }}>
+
+              <span style={helperStyle}>
                 Permitted daily access window start time.
               </span>
             </div>
@@ -1282,6 +1944,7 @@ export default function UserForm({ mode = 'add', initialData = null }) {
               <label className="form-label" htmlFor="field-logoutTime">
                 LogOut Time
               </label>
+
               <input
                 id="field-logoutTime"
                 name="logoutTime"
@@ -1291,14 +1954,18 @@ export default function UserForm({ mode = 'add', initialData = null }) {
                 onChange={handleChange}
                 placeholder="06:00 PM"
               />
-              <span style={{ fontSize: '11px', color: '#647e82', marginTop: '4px', display: 'block' }}>
+
+              <span style={helperStyle}>
                 Permitted daily access window end time.
               </span>
             </div>
           </div>
         </div>
 
-        {/* Global Error Banner */}
+        {/* ====================================================
+            GLOBAL ERROR BANNER
+        ==================================================== */}
+
         {(Object.keys(errors).length > 0 || submitError) && (
           <div
             style={{
@@ -1315,13 +1982,18 @@ export default function UserForm({ mode = 'add', initialData = null }) {
             }}
           >
             <AlertCircle size={18} />
+
             <span>
-              {submitError || 'Please correct the errors highlighted above before submitting the form.'}
+              {submitError ||
+                'Please correct the errors highlighted above before submitting the form.'}
             </span>
           </div>
         )}
 
-        {/* Bottom Actions */}
+        {/* ====================================================
+            BOTTOM ACTIONS
+        ==================================================== */}
+
         <div
           style={{
             display: 'flex',
@@ -1346,10 +2018,20 @@ export default function UserForm({ mode = 'add', initialData = null }) {
             disabled={submitting}
             aria-busy={submitting}
             className="primary-button"
-            style={{ minWidth: '140px', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+            style={{
+              minWidth: '140px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+            }}
           >
             {isEdit ? <Save size={16} /> : <Check size={16} />}
-            {submitting ? 'Submitting...' : isEdit ? 'Save Changes' : 'Submit'}
+
+            {submitting
+              ? 'Submitting...'
+              : isEdit
+                ? 'Save Changes'
+                : 'Submit'}
           </button>
         </div>
       </form>
