@@ -302,15 +302,18 @@ const newLeadInlineStyles = `
 .lead-full-page .lead-table-heading h4{margin:0;color:#315456;font-size:12px;font-weight:750}
 .lead-full-page .lead-table-add{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:34px;padding:0 10px;border:1px solid #cbded9;border-radius:5px;background:#f3f8f6;color:#226b62;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap}
 .lead-full-page .lead-address-content,.lead-full-page .lead-credit-content{display:grid;gap:18px}
+.lead-full-page .lead-address-rows{display:grid;gap:14px}
+.lead-full-page .lead-address-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:end;gap:15px 16px;padding:16px;border:1px solid #dfe6ea;border-radius:8px;background:#fff}
+.lead-full-page .lead-address-row .lead-address-street{grid-column:1/-1}
+.lead-full-page .lead-address-row>button{display:inline-flex;align-items:center;justify-content:center;justify-self:start;min-height:38px;padding:0 10px;border:1px solid #d8e3e8;border-radius:6px;background:#f5f9fa;color:#31505d;cursor:pointer}
+.lead-full-page .lead-address-row>button:hover{background:#edf5f4}
 .lead-full-page .lead-submit-error{margin:0 0 14px;padding:10px 12px;border:1px solid #efcaca;border-radius:5px;background:#fff5f5;color:#9d3030;font-size:12px;line-height:1.45}
 .lead-full-page .lead-modal-footer{display:flex;justify-content:flex-end;gap:12px;margin-top:auto;padding-top:28px}
 .lead-full-page .loan-form-actions{flex-direction:row;justify-content:space-between;padding-top:28px;gap:12px}
 .lead-full-page .loan-form-actions .loan-back-button,.lead-full-page .loan-form-actions .loan-continue-button{height:46px;min-width:130px;padding:0 16px;border-radius:8px;font-size:13px}
-.lead-full-page .lead-cancel-button{min-width:130px;height:46px;padding:0 16px;border:1px solid #d2dfe2;border-radius:8px;background:#f7f9fa;color:#1d3b48;font-size:13px;font-weight:700}
-.lead-full-page .lead-cancel-button:hover{background:#edf3f4}
 @media(max-width:920px){.lead-full-page .loan-form-actions{flex-direction:row}}
-@media(max-width:760px){.lead-full-page{padding:14px 16px 24px}.lead-full-page .lead-page-content{width:100%}.lead-full-page .lead-onboarding-card{padding:14px 14px 20px}.lead-full-page .loan-stepper{gap:8px}.lead-full-page .loan-step{gap:6px}.lead-full-page .loan-step:not(:last-child)::after{width:12px;margin-left:4px}.lead-full-page .loan-step-text{font-size:10px}.lead-full-page .lead-personal-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}.lead-full-page .lead-personal-demographics{grid-template-columns:minmax(0,1.2fr) minmax(65px,.5fr) minmax(0,1fr);gap:10px}.lead-full-page .lead-income-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.lead-full-page .lead-referral-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.lead-full-page .lead-income-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.lead-full-page .lead-income-table th,.lead-full-page .lead-income-table td{padding:5px 2px;font-size:9px}.lead-full-page .lead-income-table td input{height:30px;min-height:30px;padding:0 2px;font-size:9px}.lead-full-page .lead-modal-footer{flex-direction:row;flex-wrap:wrap;justify-content:flex-end}.lead-full-page .lead-modal-footer button{width:auto}}
-@media(max-width:480px){.lead-full-page .lead-personal-grid,.lead-full-page .lead-referral-grid,.lead-full-page .lead-income-grid{grid-template-columns:1fr}.lead-full-page .lead-name-combo{grid-template-columns:70px minmax(0,1fr)}.lead-full-page .lead-personal-demographics{grid-template-columns:1fr;width:100%}.lead-full-page .lead-personal-demographics,.lead-full-page .lead-identity-field{grid-column:1}.lead-full-page .lead-personal-actions{grid-column:1;justify-content:stretch}.lead-full-page .lead-personal-actions button{flex:1}.lead-full-page .lead-income-grid .lead-income-employer{grid-column:auto}.lead-full-page .lead-modal-footer{flex-wrap:wrap}.lead-full-page .lead-save-btn,.lead-full-page .lead-cancel-btn,.lead-full-page .lead-previous-btn{flex:1}.lead-full-page .lead-mobile-field,.lead-full-page .lead-identity-field,.lead-full-page .lead-otp-field{grid-template-columns:1fr}.lead-full-page .lead-verify-button,.lead-full-page .lead-otp-verify{width:100%}}
+@media(max-width:760px){.lead-full-page{padding:14px 16px 24px}.lead-full-page .lead-page-content{width:100%}.lead-full-page .lead-onboarding-card{padding:14px 14px 20px}.lead-full-page .loan-stepper{gap:8px}.lead-full-page .loan-step{gap:6px}.lead-full-page .loan-step:not(:last-child)::after{width:12px;margin-left:4px}.lead-full-page .loan-step-text{font-size:10px}.lead-full-page .lead-personal-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}.lead-full-page .lead-personal-demographics{grid-template-columns:minmax(0,1.2fr) minmax(65px,.5fr) minmax(0,1fr);gap:10px}.lead-full-page .lead-income-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.lead-full-page .lead-referral-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.lead-full-page .lead-income-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.lead-full-page .lead-address-row{grid-template-columns:repeat(2,minmax(0,1fr))}.lead-full-page .lead-income-table th,.lead-full-page .lead-income-table td{padding:5px 2px;font-size:9px}.lead-full-page .lead-income-table td input{height:30px;min-height:30px;padding:0 2px;font-size:9px}.lead-full-page .lead-modal-footer{flex-direction:row;flex-wrap:wrap;justify-content:flex-end}.lead-full-page .lead-modal-footer button{width:auto}}
+@media(max-width:480px){.lead-full-page .lead-personal-grid,.lead-full-page .lead-referral-grid,.lead-full-page .lead-income-grid,.lead-full-page .lead-address-row{grid-template-columns:1fr}.lead-full-page .lead-name-combo{grid-template-columns:70px minmax(0,1fr)}.lead-full-page .lead-personal-demographics{grid-template-columns:1fr;width:100%}.lead-full-page .lead-personal-demographics,.lead-full-page .lead-identity-field{grid-column:1}.lead-full-page .lead-personal-actions{grid-column:1;justify-content:stretch}.lead-full-page .lead-personal-actions button{flex:1}.lead-full-page .lead-income-grid .lead-income-employer{grid-column:auto}.lead-full-page .lead-modal-footer{flex-wrap:wrap}.lead-full-page .lead-save-btn,.lead-full-page .lead-previous-btn{flex:1}.lead-full-page .lead-mobile-field,.lead-full-page .lead-identity-field,.lead-full-page .lead-otp-field{grid-template-columns:1fr}.lead-full-page .lead-verify-button,.lead-full-page .lead-otp-verify{width:100%}}
 `;
 
 export default function NewLead({ open, onClose, onCreate, onUpdate, initialData = null }) {
@@ -747,39 +750,42 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
             <Plus size={14} /> Add Address Details
           </button>
         </div>
-        <div className="lead-data-table-wrap">
-          <table className="lead-data-table">
-            <thead>
-              <tr>
-                <th scope="col">Address Type</th>
-                <th scope="col">Flat / Building</th>
-                <th scope="col">Street / Road</th>
-                <th scope="col">Landmark</th>
-                <th scope="col">City</th>
-                <th scope="col">State</th>
-                <th scope="col">PIN Code</th>
-                <th scope="col">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {form.addressDetails.map((address, index) => (
-                <tr key={index}>
-                  <td><input aria-label={`Address ${index + 1} type`} value={address.addressType} onChange={(event) => updateRow('addressDetails', index, 'addressType', event.target.value)} /></td>
-                  <td><input aria-label={`Address ${index + 1} flat or building`} value={address.flatBuildingName} onChange={(event) => updateRow('addressDetails', index, 'flatBuildingName', event.target.value)} /></td>
-                  <td><input aria-label={`Address ${index + 1} street or road`} value={address.streetRoad} onChange={(event) => updateRow('addressDetails', index, 'streetRoad', event.target.value)} /></td>
-                  <td><input aria-label={`Address ${index + 1} landmark`} value={address.landmark} onChange={(event) => updateRow('addressDetails', index, 'landmark', event.target.value)} /></td>
-                  <td><input aria-label={`Address ${index + 1} city`} value={address.city} onChange={(event) => updateRow('addressDetails', index, 'city', event.target.value)} /></td>
-                  <td><input aria-label={`Address ${index + 1} state`} value={address.state} onChange={(event) => updateRow('addressDetails', index, 'state', event.target.value)} /></td>
-                  <td><input aria-label={`Address ${index + 1} PIN code`} value={address.pinCode} onChange={(event) => updateRow('addressDetails', index, 'pinCode', event.target.value)} /></td>
-                  <td>
-                    <button type="button" onClick={() => removeRow('addressDetails', index)} aria-label={`Delete Address Details ${index + 1}`}>
-                      <Trash2 size={13} /> 
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="lead-address-rows">
+          {form.addressDetails.map((address, index) => (
+            <div className="lead-address-row" key={index}>
+              <label className="lead-field">
+                <span>Address Type</span>
+                <input aria-label={`Address ${index + 1} type`} value={address.addressType} onChange={(event) => updateRow('addressDetails', index, 'addressType', event.target.value)} />
+              </label>
+              <label className="lead-field">
+                <span>Flat / Building</span>
+                <input aria-label={`Address ${index + 1} flat or building`} value={address.flatBuildingName} onChange={(event) => updateRow('addressDetails', index, 'flatBuildingName', event.target.value)} />
+              </label>
+              <label className="lead-field lead-address-street">
+                <span>Street / Road</span>
+                <input aria-label={`Address ${index + 1} street or road`} value={address.streetRoad} onChange={(event) => updateRow('addressDetails', index, 'streetRoad', event.target.value)} />
+              </label>
+              <label className="lead-field">
+                <span>Landmark</span>
+                <input aria-label={`Address ${index + 1} landmark`} value={address.landmark} onChange={(event) => updateRow('addressDetails', index, 'landmark', event.target.value)} />
+              </label>
+              <label className="lead-field">
+                <span>City</span>
+                <input aria-label={`Address ${index + 1} city`} value={address.city} onChange={(event) => updateRow('addressDetails', index, 'city', event.target.value)} />
+              </label>
+              <label className="lead-field">
+                <span>State</span>
+                <input aria-label={`Address ${index + 1} state`} value={address.state} onChange={(event) => updateRow('addressDetails', index, 'state', event.target.value)} />
+              </label>
+              <label className="lead-field">
+                <span>PIN Code</span>
+                <input aria-label={`Address ${index + 1} PIN code`} value={address.pinCode} onChange={(event) => updateRow('addressDetails', index, 'pinCode', event.target.value)} />
+              </label>
+              <button type="button" onClick={() => removeRow('addressDetails', index)} aria-label={`Delete Address Details ${index + 1}`}>
+                <Trash2 size={13} />
+              </button>
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -1102,11 +1108,6 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
       ) : (
         <button type="button" className="loan-continue-button" onClick={handleSubmit} disabled={isSubmitting}>
         {isSubmitting ? 'Submitting...' : initialData ? 'Save Changes' : 'Submit'}
-        </button>
-      )}
-      {activeStep === 3 && (
-        <button type="button" className="loan-back-button lead-cancel-button" onClick={() => resetAndClose()} disabled={isSubmitting}>
-          Cancel
         </button>
       )}
     </div>

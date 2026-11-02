@@ -601,10 +601,11 @@ export function LeadManagementPage({ corporate = false }) {
   const openLeadEditor = async (lead, detailsAlreadyLoaded = false) => {
     setLeadDetailsError('');
     try {
-      const details = detailsAlreadyLoaded ? lead : await loadLeadDetails(lead);
+      const details = detailsAlreadyLoaded ? lead : normalizeLeadRecord(await getLeadById(lead.id));
       setSelectedLead(null);
       setEditingLead(details);
-    } catch {
+    } catch (error) {
+      setLeadDetailsError(error instanceof Error ? error.message : 'Unable to load lead details.');
       setSelectedLead(lead);
     }
   };
