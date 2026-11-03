@@ -8,8 +8,8 @@ import { assessLoanEligibility } from '../../services/loanEligibility';
 
 const makeRow = (id, type, source, amount = '') => ({ id, type, source, amount });
 const initialForm = () => ({
-  customerNumber: '', initials: '', name: '', loanType: 'Personal loan', requestedAmount: '', collateralValue: '',
-  annualInterestRate: '12', tenureMonths: '60', monthlyDebtService: '0', cibilScore: '',
+  customerNumber: '', initials: '', name: '', loanType: '', requestedAmount: '', collateralValue: '',
+  annualInterestRate: '12', tenureMonths: '', monthlyDebtService: '0', cibilScore: '',
   rows: [makeRow(1, 'Income', 'Salary'), makeRow(2, 'Expense', 'Others', '0')]
 });
 
@@ -37,6 +37,7 @@ function validate(form) {
   if (!/^[A-Z0-9-]{4,24}$/i.test(form.customerNumber.trim())) errors.customerNumber = 'Enter a valid customer number (4–24 letters, numbers, or hyphens).';
   if (form.initials && !/^[A-Z.]{1,5}$/i.test(form.initials.trim())) errors.initials = 'Use up to 5 letters or periods.';
   if (form.name.trim().length < 2 || form.name.trim().length > 100) errors.name = 'Enter a full name between 2 and 100 characters.';
+  if (!form.loanType) errors.loanType = 'Select a loan product.';
   if (!form.rows.some((row) => row.type === 'Income' && Number(row.amount) > 0)) errors.income = 'Add at least one income amount greater than zero.';
   form.rows.forEach((row) => {
     if (!row.source.trim()) errors[`row-${row.id}-source`] = 'Enter an income or expense source.';
@@ -126,6 +127,124 @@ const assessmentStyles = `
 .le-score-hint{margin:0;color:#748688;font-size:10px;font-weight:500}
 @media(max-width:980px){.le-assessment-layout{grid-template-columns:minmax(0,1fr)}.le-results-panel{position:static}.le-results-panel{display:grid;grid-template-columns:1fr 1fr}.le-results-head,.le-guidance,.le-disclaimer{grid-column:1/-1}.le-results-head{border-bottom:1px solid #e7eeec}.le-emi-block{border-right:1px solid #e7eeec}.le-review-list{grid-column:1/-1}.le-capacity{align-content:center}}
 @media(max-width:620px){.le-wrap{padding:0 12px 24px}.le-section{padding:17px 14px}.le-form-fields{grid-template-columns:1fr;gap:12px}.le-form-actions{padding:13px 14px}.le-results-panel{display:block}.le-emi-block{border-right:0}.le-results-head,.le-guidance,.le-disclaimer,.le-review-list{grid-column:auto}.le-metric-grid{gap:7px;padding:11px 12px}.le-capacity{padding:0 12px 13px}.le-customer{margin-bottom:0}.le-name-fields{grid-template-columns:66px minmax(0,1fr)}}
+
+.le-wrap{max-width:1420px;padding:0 22px 40px;color:#243039;font-family:inherit}
+.le-wrap .page-header{align-items:center;margin-bottom:22px}
+.le-wrap .page-header h1{margin-bottom:0}
+.le-assessment-layout{grid-template-columns:minmax(0,1.6fr) minmax(300px,.8fr);gap:16px}
+.le-form-panel,.le-results-panel{border-color:#e4e9ef;border-radius:9px;box-shadow:0 2px 7px #20384d08}
+.le-section{padding:21px 22px;border-color:#edf0f3}
+.le-section-heading{align-items:center;gap:10px;margin-bottom:17px}
+.le-section-index{border-color:#f0dfb0;border-radius:7px;background:#fff5dc;color:#a9790d}
+.le-section-heading h2{color:#1d3043;font-size:14px;font-weight:650}
+.le-form-fields{gap:15px 18px}
+.le-form-fields .le-field{color:#526477;font-size:11px;font-weight:600}
+.le-form-fields .le-field input,.le-form-fields .le-field select{height:40px;border-color:#d6dfe7;border-radius:7px;background:#fff;color:#24384a;font:inherit;font-size:12px}
+.le-form-fields .le-field input:focus,.le-form-fields .le-field select:focus{border-color:#177e7a;box-shadow:0 0 0 3px #177e7a18}
+.le-table-wrap{border-color:#e1e7ed;border-radius:7px}
+.le-table th,.le-table td{border-color:#edf0f3;color:#526477}
+.le-table th{background:#fafbfc;color:#758596;font-size:10px;letter-spacing:.04em}
+.le-table td input,.le-table td select{height:35px;border-color:#d6dfe7;border-radius:6px;color:#24384a;font:inherit;font-size:12px}
+.le-total-row th,.le-total-row td{background:#fafbfc;color:#34495e}
+.le-add{border-color:#dce5eb;border-radius:7px;background:#fff;color:#177e7a;font-size:11px}
+.le-add:hover{background:#f4f8f7}
+.le-remove{border-radius:6px}
+.le-form-actions{padding:16px 22px;background:#fafbfc}
+.le-btn{min-height:39px;border-color:#d6dfe7;border-radius:7px;color:#43566a;font:inherit;font-size:12px;cursor:pointer}
+.le-submit{border-color:#177e7a;background:#177e7a;color:#fff}
+.le-results-head{padding:18px 19px 15px;border-color:#edf0f3}
+.le-results-kicker{color:#8795a3;letter-spacing:.07em}
+.le-results-head h2{color:#1d3043;font-size:15px;font-weight:650}
+.le-decision-banner{align-items:center;border-radius:8px}
+.le-decision-banner strong{font-size:12px}
+.le-decision-banner span{display:none}
+.le-emi-block{border-color:#edf0f3}
+.le-emi-label{color:#758596}
+.le-emi-value{color:#173f49;font-size:27px}
+.le-metric-card{border-color:#e8edf2;border-radius:7px;background:#fcfdff}
+.le-metric-card span{color:#758596;font-size:10px}
+.le-metric-card strong{color:#24384a;font-size:18px}
+.le-metric-card small{color:#8795a3;font-size:10px}
+.le-capacity-item{border-color:#e2b43b;border-radius:0 7px 7px 0;background:#fffaf0}
+.le-capacity-item span{color:#758596}
+.le-capacity-item strong{color:#34495e}
+.le-review-list{border-color:#edf0f3}
+.le-review-list li{font-size:11px}
+.le-disclaimer{padding:12px 16px;border-color:#edf0f3;background:#fafbfc;color:#758596;font-size:10px}
+.le-error{font-size:11px}
+@media(max-width:980px){.le-assessment-layout{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:620px){.le-wrap{padding:0 15px 30px}.le-section{padding:18px 15px}.le-form-actions{padding:14px 15px}.le-results-panel{display:block}.le-review-list{grid-column:auto}}
+
+.le-wrap{max-width:1420px;padding:0 22px 34px;color:#243039;font-family:inherit}
+.le-wrap .page-header{align-items:center;margin-bottom:20px}
+.le-wrap .page-header h1{margin:0}
+.le-assessment-layout{display:block}
+.le-form-panel{overflow:visible;border:1px solid #e1e7ed;border-radius:8px;background:#fff;box-shadow:0 2px 7px #20384d08}
+.le-section{padding:18px 20px;border-color:#edf0f3}
+.le-section-heading{align-items:center;margin-bottom:14px}
+.le-section-index{display:none}
+.le-section-heading h2{color:#1d3043;font-size:14px;font-weight:650}
+.le-applicant-fields{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
+.le-applicant-primary-fields{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));align-items:start;gap:14px 16px}
+.le-applicant-secondary-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:start;gap:14px 16px}
+.le-applicant-fields .le-field{grid-template-rows:minmax(28px,auto) 40px auto;align-content:start;gap:6px;line-height:1.35}
+.le-form-fields .le-field{color:#526477;font-size:11px;font-weight:600}
+.le-form-fields .le-field input,.le-form-fields .le-field select{width:100%;min-width:0;height:40px;padding:0 10px;border-color:#d6dfe7;border-radius:6px;background:#fff;color:#24384a;font:inherit;font-size:12px}
+.le-form-fields .le-field input:focus,.le-form-fields .le-field select:focus{border-color:#177e7a;box-shadow:0 0 0 3px #177e7a18}
+.le-status{display:flex;height:40px;min-width:0;align-items:center;overflow:hidden;padding:0 10px;border:1px solid #d6dfe7;border-radius:6px;background:#f8fafb;color:#526477;font-size:12px;font-weight:600;text-overflow:ellipsis;white-space:nowrap}
+.le-status.placeholder{color:#8795a3;font-weight:400}
+.le-status.review{border-color:#e9dfbd;background:#fffaf0;color:#83631f}
+.le-status.outside{border-color:#eed1d1;background:#fff6f6;color:#9b3a3a}
+.le-tables-layout{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);align-items:start;gap:18px;padding:0 20px 18px}
+.le-table-section{min-width:0}
+.le-table-section .le-section-heading{margin:0 0 11px}
+.le-table-wrap{border-color:#e1e7ed;border-radius:6px}
+.le-table{min-width:0}
+.le-income-table th,.le-income-table td,.le-financial-table th,.le-financial-table td{height:40px;padding:6px 8px;border-color:#edf0f3;color:#526477;font-size:11px}
+.le-income-table th,.le-financial-table th{height:36px;background:#fafbfc;color:#758596;font-size:10px;font-weight:650;letter-spacing:.025em;white-space:nowrap}
+.le-income-table td input,.le-income-table td select,.le-financial-table td input{height:33px;border-color:#d6dfe7;border-radius:5px;color:#24384a;font:inherit;font-size:11px}
+.le-income-table th:first-child{width:17%}
+.le-income-table th:nth-child(2){width:25%}
+.le-income-table th:nth-child(3),.le-income-table th:nth-child(4){width:22%}
+.le-income-table th:last-child{width:14%}
+.le-income-table td input[aria-invalid=true],.le-financial-table td input[aria-invalid=true]{border-color:#b83b3b;background:#fffafa}
+.le-table-cell-error{display:block;margin-top:3px;text-align:left}
+.le-table-empty{color:#a1acb6;text-align:center!important}
+.le-income-table .le-total-row th,.le-income-table .le-total-row td{height:38px;background:#fafbfc;color:#34495e;font-weight:650}
+.le-financial-table th:first-child{width:42%;text-align:left}
+.le-financial-table th:nth-child(2){width:35%}
+.le-financial-table td:first-child{text-align:left}
+.le-financial-value{color:#24384a;font-variant-numeric:tabular-nums;font-weight:600}
+.le-table-meta{color:#8795a3;font-size:10px}
+.le-financial-table td small{display:block;margin-top:2px;color:#8795a3;font-size:9px}
+.le-cibil-input{width:100%;padding:0 7px}
+.le-add{margin-top:9px;padding:7px 10px;border-color:#dce5eb;border-radius:6px;background:#fff;color:#177e7a;font-size:11px;cursor:pointer}
+.le-add:hover{background:#f4f8f7}
+.le-inline-error{margin:8px 0 0}
+.le-eligibility-results{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;padding:16px 20px;border-top:1px solid #edf0f3;border-bottom:1px solid #edf0f3;background:#fafbfc}
+.le-result-field{display:grid;gap:5px;min-width:0;color:#758596;font-size:10px;font-weight:600}
+.le-result-field output{overflow:hidden;color:#24384a;font-size:16px;font-variant-numeric:tabular-nums;font-weight:650;text-overflow:ellipsis;white-space:nowrap}
+.le-result-field:first-child output,.le-result-field:last-child output{color:#173f49;font-size:18px}
+.le-eligibility-decision{display:flex;align-items:center;gap:9px;padding:12px 20px;border-bottom:1px solid #edf0f3;background:#f5faf7;color:#286c4c;font-size:12px}
+.le-eligibility-decision.review{background:#fffaf0;color:#83631f}
+.le-eligibility-decision.outside{background:#fff6f6;color:#9b3a3a}
+.le-eligibility-decision strong{font-weight:700}
+.le-eligibility-note{margin-left:auto;color:#758596;font-size:10px;font-weight:400}
+.le-financial-table .le-risk-good{color:#39815a}
+.le-financial-table .le-risk-review{color:#9a7424}
+.le-financial-table .le-risk-high{color:#a43b3b}
+.le-screening{display:grid;gap:6px;margin:0;padding:13px 20px;border-bottom:1px solid #edf0f3;list-style:none}
+.le-screening li{display:flex;align-items:flex-start;gap:7px;color:#6d5b35;font-size:10px;line-height:1.45}
+.le-screening svg{flex:none;color:#a37c2c}
+.le-screening .le-screening-clear{color:#39815a}
+.le-message{margin:0 20px 12px;padding:9px 11px;border-radius:6px;font-size:11px}
+.le-form-actions{justify-content:flex-end;gap:9px;padding:14px 20px;background:#fafbfc}
+.le-btn{min-height:37px;border-color:#d6dfe7;border-radius:6px;color:#43566a;font:inherit;font-size:12px;cursor:pointer}
+.le-submit{border-color:#177e7a;background:#177e7a;color:#fff}
+.le-submit:hover{background:#0c6662}
+@media(max-width:1200px){.le-applicant-primary-fields{grid-template-columns:repeat(3,minmax(0,1fr))}.le-applicant-secondary-fields{grid-template-columns:repeat(3,minmax(0,1fr))}.le-tables-layout{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:760px){.le-applicant-primary-fields,.le-applicant-secondary-fields{grid-template-columns:repeat(2,minmax(0,1fr));gap:13px 14px}}
+@media(max-width:480px){.le-wrap{padding:0 15px 28px}.le-section{padding:16px 14px}.le-applicant-primary-fields,.le-applicant-secondary-fields{grid-template-columns:minmax(0,1fr);gap:12px}.le-applicant-fields .le-field{grid-template-rows:auto 40px auto}.le-tables-layout{gap:16px;padding:0 14px 15px}.le-form-actions{padding:13px 14px}.le-eligibility-results{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:14px}.le-screening{padding:12px 14px}.le-message{margin-right:14px;margin-left:14px}}
 `;
 
 export default function LoanEligibilityPage() {
@@ -134,6 +253,7 @@ export default function LoanEligibilityPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
   const [decision, setDecision] = useState('');
+  const [loanStatus, setLoanStatus] = useState('');
 
   const totalIncome = form.rows.filter((row) => row.type === 'Income').reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
   const totalExpense = form.rows.filter((row) => row.type === 'Expense').reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
@@ -154,17 +274,30 @@ export default function LoanEligibilityPage() {
   const maxAffordableLoan = calculatePrincipal(maxAffordableEmi, annualInterestRate, tenureMonths);
   const homeLtvLimit = requestedAmount <= 3000000 ? 90 : requestedAmount <= 7500000 ? 80 : 75;
   const screeningFlags = [];
-  if (foirValue !== null && foirValue > 50) screeningFlags.push('Proposed repayments exceed the 50% indicative FOIR ceiling.');
+  if (foirValue !== null && foirValue > 50) screeningFlags.push('FOIR exceeds the 50% indicative screening ceiling.');
   if (ndirValue !== null && ndirValue < 0) screeningFlags.push('Monthly income does not cover declared expenses and loan repayments.');
   if (Number(form.cibilScore) > 0 && Number(form.cibilScore) < 650) screeningFlags.push('Credit score is below the indicative 650 screening floor.');
   if (form.loanType === 'Home loan' && ltvValue !== null && ltvValue > homeLtvLimit) screeningFlags.push(`Requested home-loan LTV exceeds the ${homeLtvLimit}% RBI benchmark for this loan amount.`);
   const reviewFlags = [];
-  if (foirValue !== null && foirValue > 40 && foirValue <= 50) reviewFlags.push('FOIR is above the preferred 40% screening band.');
+  if (foirValue !== null && foirValue >= 40 && foirValue <= 50) reviewFlags.push('FOIR is in the 40–50% review band; lender policy determines acceptance.');
+  if (ltvValue !== null && ltvValue > 80) reviewFlags.push('LTV is above the 80% indicative risk band; additional security or review may be required.');
   if (Number(form.cibilScore) >= 650 && Number(form.cibilScore) < 750) reviewFlags.push('Credit score is below the commonly preferred 750 range.');
   if (dscrValue !== null && dscrValue < 1.25) reviewFlags.push('Estimated debt-service coverage is below 1.25x.');
   if (form.loanType === 'Home loan' && ltvValue !== null && ltvValue > homeLtvLimit - 5 && ltvValue <= homeLtvLimit) reviewFlags.push('Home-loan LTV is close to the RBI benchmark limit.');
-  const localDecision = screeningFlags.length ? 'Outside indicative range' : reviewFlags.length ? 'Manual review recommended' : 'Within indicative range';
+  const localDecision = screeningFlags.length ? 'Not eligible — screening criteria not met' : reviewFlags.length ? 'Manual review required' : 'Eligible — indicative screening';
   const metric = (value, suffix = '%') => value !== null && Number.isFinite(value) ? `${value.toFixed(2)}${suffix}` : '—';
+  const ratioBand = (value, preferredMaximum, reviewMaximum) => {
+    if (value === null) return { label: 'Not available', className: '' };
+    if (value < preferredMaximum) return { label: 'Preferred', className: 'le-risk-good' };
+    if (value <= reviewMaximum) return { label: 'Review', className: 'le-risk-review' };
+    return { label: 'High risk', className: 'le-risk-high' };
+  };
+  const foirBand = ratioBand(foirValue, 40, 50);
+  const ltvBand = ltvValue === null
+    ? { label: 'Not available', className: '' }
+    : ltvValue <= 80
+      ? { label: 'Within 80% band', className: 'le-risk-good' }
+      : { label: 'High risk', className: 'le-risk-high' };
   const dti = metric(dtiValue);
   const ltv = metric(ltvValue);
   const dscr = metric(dscrValue, 'x');
@@ -220,7 +353,7 @@ export default function LoanEligibilityPage() {
         setMessage({ type: 'success', text: result.result?.message || 'Eligibility assessment completed.' });
       } else {
         setDecision(localDecision);
-        setMessage({ type: 'info', text: 'This is an indicative screening only. Final eligibility, pricing and terms depend on the lender’s credit policy and document verification.' });
+        setMessage({ type: 'info', text: 'Indicative estimate only; final decisions depend on lender policy and verification.' });
       }
     } catch (error) {
       setMessage({ type: 'error', text: error.message || 'Unable to assess eligibility.' });
@@ -234,6 +367,7 @@ export default function LoanEligibilityPage() {
     setErrors({});
     setMessage(null);
     setDecision('');
+    setLoanStatus('');
   }
 
   function addRow() {
@@ -246,7 +380,8 @@ export default function LoanEligibilityPage() {
     setErrors((current) => Object.fromEntries(Object.entries(current).filter(([key]) => !key.startsWith(`row-${id}-`))));
   }
 
-  const decisionTone = decision.includes('Outside') ? 'outside' : decision.includes('review') ? 'review' : '';
+  const normalizedDecision = decision.toLowerCase();
+  const decisionTone = normalizedDecision.includes('outside') || normalizedDecision.includes('not eligible') ? 'outside' : normalizedDecision.includes('review') ? 'review' : '';
   const cibilBand = !form.cibilScore ? 'Not entered' : Number(form.cibilScore) >= 750 ? 'Strong range' : Number(form.cibilScore) >= 650 ? 'Review range' : 'Below screening floor';
   const monthlySurplus = netIncome - totalDebtService;
 
@@ -255,37 +390,45 @@ export default function LoanEligibilityPage() {
       <style>{styles}</style>
       <style>{assessmentStyles}</style>
       <main className="le-wrap">
-        <PageHeader title="Loan Eligbility" description="Set effective-dated interest tiers by loan product and tenure." marquee />
+        <PageHeader title="Loan Eligibility" />
         {message && <div className={`le-message${message.type === 'error' ? ' error' : ''}`} role={message.type === 'error' ? 'alert' : 'status'}>{message.text}</div>}
         <div className="le-assessment-layout">
           <form className="le-form-panel" onSubmit={submit} noValidate>
             <section className="le-section" aria-labelledby="le-applicant-heading">
-              <header className="le-section-heading"><span className="le-section-index">01</span><div><h2 id="le-applicant-heading">Applicant & loan request</h2><p>Identify the applicant and set the proposed loan terms.</p></div></header>
-              <div className="le-form-fields">
-                <label className="le-field" htmlFor="le-customerNumber">Customer number *<input id="le-customerNumber" value={form.customerNumber} onChange={(event) => update('customerNumber', event.target.value.toUpperCase())} maxLength={24} autoComplete="off" aria-invalid={Boolean(errors.customerNumber)} />{errors.customerNumber && <small className="le-error">{errors.customerNumber}</small>}</label>
-                <label className="le-field" htmlFor="le-name">Applicant name *<input id="le-name" value={form.name} onChange={(event) => update('name', event.target.value)} maxLength={100} autoComplete="name" aria-invalid={Boolean(errors.name)} />{errors.name && <small className="le-error">{errors.name}</small>}</label>
-                <label className="le-field" htmlFor="le-loanType">Loan product *<select id="le-loanType" value={form.loanType} onChange={(event) => update('loanType', event.target.value)}><option>Personal loan</option><option>Home loan</option><option>Vehicle loan</option><option>Business loan</option><option>Other secured loan</option></select></label>
-                <label className="le-field" htmlFor="le-requestedAmount">Requested amount (₹) *<input id="le-requestedAmount" type="number" min="1" step="1000" inputMode="decimal" value={form.requestedAmount} onChange={(event) => update('requestedAmount', event.target.value)} aria-invalid={Boolean(errors.requestedAmount)} />{errors.requestedAmount && <small className="le-error">{errors.requestedAmount}</small>}</label>
-                <label className="le-field" htmlFor="le-annualInterestRate">Expected annual interest rate (%) *<input id="le-annualInterestRate" type="number" min="0.01" max="60" step="0.01" inputMode="decimal" value={form.annualInterestRate} onChange={(event) => update('annualInterestRate', event.target.value)} aria-invalid={Boolean(errors.annualInterestRate)} />{errors.annualInterestRate && <small className="le-error">{errors.annualInterestRate}</small>}</label>
-                <label className="le-field" htmlFor="le-tenureMonths">Loan term (months) *<input id="le-tenureMonths" type="number" min="6" max="480" step="1" value={form.tenureMonths} onChange={(event) => update('tenureMonths', event.target.value)} aria-invalid={Boolean(errors.tenureMonths)} />{errors.tenureMonths && <small className="le-error">{errors.tenureMonths}</small>}</label>
+              <header className="le-section-heading"><h2 id="le-applicant-heading">Applicant & loan details</h2></header>
+              <div className="le-form-fields le-applicant-fields">
+                <div className="le-applicant-primary-fields">
+                  <label className="le-field" htmlFor="le-customerNumber">Lead ID *<input id="le-customerNumber" value={form.customerNumber} onChange={(event) => update('customerNumber', event.target.value.toUpperCase())} maxLength={24} autoComplete="off" aria-invalid={Boolean(errors.customerNumber)} />{errors.customerNumber && <small className="le-error">{errors.customerNumber}</small>}</label>
+                  <label className="le-field" htmlFor="le-name">Name of the applicant *<input id="le-name" value={form.name} onChange={(event) => update('name', event.target.value)} maxLength={100} autoComplete="name" aria-invalid={Boolean(errors.name)} />{errors.name && <small className="le-error">{errors.name}</small>}</label>
+                  <label className="le-field" htmlFor="le-loanStatus">Loan Status<select id="le-loanStatus" value={loanStatus} onChange={(event) => setLoanStatus(event.target.value)}><option value="" disabled>Select Loan Status</option><option>Draft</option><option>Pending</option><option>In review</option><option>Approved</option><option>Disbursed</option><option>Awaiting KYC</option><option>Returned</option><option>Rejected</option></select></label>
+                  <label className="le-field" htmlFor="le-requestedAmount">Loan amount (₹) *<input id="le-requestedAmount" type="number" min="1" step="1000" inputMode="decimal" value={form.requestedAmount} onChange={(event) => update('requestedAmount', event.target.value)} aria-invalid={Boolean(errors.requestedAmount)} />{errors.requestedAmount && <small className="le-error">{errors.requestedAmount}</small>}</label>
+                  <label className="le-field" htmlFor="le-collateralValue">{form.loanType === 'Home loan' ? 'Security value (₹) *' : 'Security value (₹)'}<input id="le-collateralValue" type="number" min="0" step="1000" inputMode="decimal" title="For LTV, use the lower of the appraised value or purchase price." value={form.collateralValue} onChange={(event) => update('collateralValue', event.target.value)} aria-invalid={Boolean(errors.collateralValue)} />{errors.collateralValue && <small className="le-error">{errors.collateralValue}</small>}</label>
+                </div>
+                <div className="le-applicant-secondary-fields">
+                  <label className="le-field" htmlFor="le-loanType">Loan product *<select id="le-loanType" value={form.loanType} onChange={(event) => update('loanType', event.target.value)} aria-invalid={Boolean(errors.loanType)}><option value="" disabled>Select Loan Product</option><option>Personal loan</option><option>Home loan</option><option>Vehicle loan</option><option>Business loan</option><option>Other secured loan</option></select>{errors.loanType && <small className="le-error">{errors.loanType}</small>}</label>
+                  <label className="le-field" htmlFor="le-tenureMonths">Loan term (months) *<input id="le-tenureMonths" type="number" min="6" max="480" step="1" placeholder="Enter Loan Term" value={form.tenureMonths} onChange={(event) => update('tenureMonths', event.target.value)} aria-invalid={Boolean(errors.tenureMonths)} />{errors.tenureMonths && <small className="le-error">{errors.tenureMonths}</small>}</label>
+                  <label className="le-field" htmlFor="le-monthlyDebtService">Existing monthly debt (₹)*<input id="le-monthlyDebtService" type="number" min="0" step="0.01" inputMode="decimal" value={form.monthlyDebtService} onChange={(event) => update('monthlyDebtService', event.target.value)} aria-invalid={Boolean(errors.monthlyDebtService)} />{errors.monthlyDebtService && <small className="le-error">{errors.monthlyDebtService}</small>}</label>
+                </div>
               </div>
             </section>
 
-            <section className="le-section" aria-labelledby="le-cashflow-heading">
-              <header className="le-section-heading"><span className="le-section-index">02</span><div><h2 id="le-cashflow-heading">Monthly income & expenses</h2><p>Use recurring monthly amounts. Keep existing loan EMIs in the debt field below, not as household expenses.</p></div></header>
+            <div className="le-tables-layout">
+            <section className="le-table-section" aria-labelledby="le-cashflow-heading">
+              <header className="le-section-heading"><h2 id="le-cashflow-heading">Income & expense</h2></header>
               <div className="le-table-wrap">
-                <table className="le-table">
-                  <thead><tr><th>Type</th><th>Source</th><th>Monthly amount (₹)</th><th>Action</th></tr></thead>
+                <table className="le-table le-income-table">
+                  <thead><tr><th>Type</th><th>Source</th><th>Income Rs.</th><th>Expense Rs.</th><th>Action</th></tr></thead>
                   <tbody>
                     {form.rows.map((row) => (
                       <tr key={row.id}>
                         <td><select id={`le-row-${row.id}-type`} aria-label={`Type for row ${row.id}`} value={row.type} onChange={(event) => updateRow(row.id, 'type', event.target.value)}><option>Income</option><option>Expense</option></select></td>
-                        <td className="le-row-source"><input id={`le-row-${row.id}-source`} aria-label={`Source for row ${row.id}`} value={row.source} onChange={(event) => updateRow(row.id, 'source', event.target.value)} maxLength={60} aria-invalid={Boolean(errors[`row-${row.id}-source`])} />{errors[`row-${row.id}-source`] && <small className="le-error">{errors[`row-${row.id}-source`]}</small>}</td>
-                        <td><input id={`le-row-${row.id}-amount`} aria-label={`${row.type} amount for row ${row.id}`} type="number" min="0" step="0.01" inputMode="decimal" value={row.amount} onChange={(event) => updateRow(row.id, 'amount', event.target.value)} aria-invalid={Boolean(errors[`row-${row.id}-amount`])} />{errors[`row-${row.id}-amount`] && <small className="le-error">{errors[`row-${row.id}-amount`]}</small>}</td>
+                        <td className="le-row-source"><input id={`le-row-${row.id}-source`} aria-label={`Source for row ${row.id}`} value={row.source} onChange={(event) => updateRow(row.id, 'source', event.target.value)} maxLength={60} aria-invalid={Boolean(errors[`row-${row.id}-source`])} />{errors[`row-${row.id}-source`] && <small className="le-error le-table-cell-error">{errors[`row-${row.id}-source`]}</small>}</td>
+                        <td>{row.type === 'Income' ? <><input id={`le-row-${row.id}-amount`} aria-label={`${row.type} amount for row ${row.id}`} type="number" min="0" step="0.01" inputMode="decimal" value={row.amount} onChange={(event) => updateRow(row.id, 'amount', event.target.value)} aria-invalid={Boolean(errors[`row-${row.id}-amount`])} />{errors[`row-${row.id}-amount`] && <small className="le-error le-table-cell-error">{errors[`row-${row.id}-amount`]}</small>}</> : <span className="le-table-empty">—</span>}</td>
+                        <td>{row.type === 'Expense' ? <><input id={`le-row-${row.id}-amount`} aria-label={`${row.type} amount for row ${row.id}`} type="number" min="0" step="0.01" inputMode="decimal" value={row.amount} onChange={(event) => updateRow(row.id, 'amount', event.target.value)} aria-invalid={Boolean(errors[`row-${row.id}-amount`])} />{errors[`row-${row.id}-amount`] && <small className="le-error le-table-cell-error">{errors[`row-${row.id}-amount`]}</small>}</> : <span className="le-table-empty">—</span>}</td>
                         <td><button className="le-remove" type="button" onClick={() => removeRow(row.id)} aria-label={`Remove ${row.type.toLowerCase()} row ${row.id}`} title="Remove row"><Trash2 size={15} /></button></td>
                       </tr>
                     ))}
-                    <tr className="le-total-row"><th scope="row">Totals</th><td></td><td>Income ₹{money(totalIncome)}<br />Expenses ₹{money(totalExpense)}</td><td></td></tr>
+                    <tr className="le-total-row"><th scope="row">Totals</th><td></td><td>₹{money(totalIncome)}</td><td>₹{money(totalExpense)}</td><td></td></tr>
                   </tbody>
                 </table>
               </div>
@@ -294,56 +437,46 @@ export default function LoanEligibilityPage() {
               <button className="le-add" type="button" onClick={addRow}><CirclePlus size={15} /> Add income or expense</button>
             </section>
 
-            <section className="le-section" aria-labelledby="le-obligations-heading">
-              <header className="le-section-heading"><span className="le-section-index">03</span><div><h2 id="le-obligations-heading">Obligations & collateral</h2><p>Include current EMIs and credit repayments; add collateral data for secured lending.</p></div></header>
-              <div className="le-form-fields">
-                <label className="le-field" htmlFor="le-monthlyDebtService">Existing monthly debt payments (₹) *<input id="le-monthlyDebtService" type="number" min="0" step="0.01" inputMode="decimal" value={form.monthlyDebtService} onChange={(event) => update('monthlyDebtService', event.target.value)} aria-invalid={Boolean(errors.monthlyDebtService)} />{errors.monthlyDebtService && <small className="le-error">{errors.monthlyDebtService}</small>}</label>
-                <label className="le-field" htmlFor="le-cibilScore">CIBIL score (300–900) *<input id="le-cibilScore" type="number" min="300" max="900" step="1" value={form.cibilScore} onChange={(event) => update('cibilScore', event.target.value)} aria-invalid={Boolean(errors.cibilScore)} />{errors.cibilScore ? <small className="le-error">{errors.cibilScore}</small> : <small className="le-score-hint">Current entered range: {cibilBand}</small>}</label>
-                <label className="le-field" htmlFor="le-collateralValue">{form.loanType === 'Home loan' ? 'Property market value (₹) *' : 'Collateral value (₹, optional)'}<input id="le-collateralValue" type="number" min="0" step="1000" inputMode="decimal" value={form.collateralValue} onChange={(event) => update('collateralValue', event.target.value)} aria-invalid={Boolean(errors.collateralValue)} />{errors.collateralValue && <small className="le-error">{errors.collateralValue}</small>}</label>
+            <section className="le-table-section" aria-labelledby="le-financial-heading">
+              <header className="le-section-heading"><h2 id="le-financial-heading">Financial details</h2></header>
+              <div className="le-table-wrap">
+                <table className="le-table le-financial-table">
+                  <thead><tr><th>Particulars</th><th>% Ratio</th><th>Action</th></tr></thead>
+                  <tbody>
+                    <tr><td>FOIR <small>(fixed obligations ÷ net income)</small></td><td className="le-financial-value">{foir}</td><td><span className={`le-table-meta ${foirBand.className}`}>{foirBand.label}</span></td></tr>
+                    <tr><td>DTI <small>(total debt payments ÷ gross income)</small></td><td className="le-financial-value">{dti}</td><td><span className="le-table-meta">Auto</span></td></tr>
+                    <tr><td>LTV <small>(loan amount ÷ security value)</small></td><td className="le-financial-value">{ltv}</td><td><span className={`le-table-meta ${ltvBand.className}`}>{ltvBand.label}</span></td></tr>
+                    <tr><td>CIBIL Score</td><td><input className="le-cibil-input" id="le-cibilScore" type="number" min="300" max="900" step="1" value={form.cibilScore} onChange={(event) => update('cibilScore', event.target.value)} aria-invalid={Boolean(errors.cibilScore)} aria-label="CIBIL score (300–900)" />{errors.cibilScore && <small className="le-error">{errors.cibilScore}</small>}</td><td><span className="le-table-meta">{cibilBand}</span></td></tr>
+                    <tr><td>DSCR</td><td className="le-financial-value">{dscr}</td><td><span className="le-table-meta">Auto</span></td></tr>
+                    <tr><td>Net disposable</td><td className="le-financial-value">{ndir}<small>₹{money(monthlySurplus)} monthly balance</small></td><td><span className="le-table-meta">Auto</span></td></tr>
+                  </tbody>
+                </table>
               </div>
             </section>
+            </div>
+
+            <section className="le-eligibility-results" aria-label="Eligibility calculation results">
+              <div className="le-result-field"><span>Loan eligible</span><output>{totalIncome > 0 && tenureMonths > 0 ? `₹${money(maxAffordableLoan)}` : '—'}</output></div>
+              <div className="le-result-field"><span>Interest rate</span><output>{form.annualInterestRate || 0}%</output></div>
+              <div className="le-result-field"><span>Tenure</span><output>{tenureMonths || 0} months</output></div>
+              <div className="le-result-field"><span>EMI amount</span><output>₹{money(proposedEmi)}</output></div>
+            </section>
+
+            <div className={`le-eligibility-decision${decisionTone ? ` ${decisionTone}` : ''}`} role="status" aria-live="polite">
+              <strong>Eligibility decision:</strong>
+              <span>{decision || 'Run assessment to calculate'}</span>
+              <span className="le-eligibility-note">Indicative screening; lender policy is final.</span>
+            </div>
+
+            {decision && <ul className="le-screening" aria-label="Screening considerations">
+              {[...screeningFlags, ...reviewFlags].length ? [...screeningFlags, ...reviewFlags].map((flag) => <li key={flag}><AlertTriangle size={13} />{flag}</li>) : <li className="le-screening-clear"><Check size={13} />No screening flags.</li>}
+            </ul>}
 
             <footer className="le-form-actions">
-              <button className="le-btn" type="button" onClick={reset}><RotateCcw size={15} /> Reset</button>
-              <button className="le-btn le-submit" type="submit" disabled={saving}>{saving ? <LoaderCircle className="le-spin" size={15} /> : <ClipboardCheck size={15} />}{saving ? 'Assessing...' : 'Run assessment'}</button>
+              <button className="le-btn" type="button" onClick={reset}><RotateCcw size={15} /> Cancel</button>
+              <button className="le-btn le-submit" type="submit" disabled={saving}>{saving ? <LoaderCircle className="le-spin" size={15} /> : <ClipboardCheck size={15} />}{saving ? 'Assessing...' : 'Submit'}</button>
             </footer>
           </form>
-
-          <aside className="le-results-panel" aria-label="Live eligibility estimate">
-            <header className="le-results-head"><span className="le-results-kicker">Live estimate</span><h2>Affordability summary</h2></header>
-            <div className={`le-decision-banner ${decisionTone}`} role="status">
-              {decisionTone ? <AlertTriangle size={17} /> : <ClipboardCheck size={17} />}
-              <div><strong>{decision || 'Indicative estimate'}</strong><span>{decision ? 'Based on entered data and screening rules shown below.' : 'Complete the form and run assessment for a screening result.'}</span></div>
-            </div>
-            <div className="le-emi-block"><span className="le-emi-label">Estimated monthly EMI</span><strong className="le-emi-value">₹{money(proposedEmi)}</strong><p className="le-emi-footnote">Principal ₹{money(requestedAmount)} · {form.annualInterestRate || 0}% p.a. · {tenureMonths || 0} months</p></div>
-            <div className="le-metric-grid" aria-label="Calculated financial ratios">
-              <div className="le-metric-card"><span>DTI · gross income</span><strong>{dti}</strong><small>Total debt payments ÷ gross monthly income</small></div>
-              <div className="le-metric-card"><span>FOIR · take-home</span><strong>{foir}</strong><small>Total EMIs ÷ income after listed expenses</small></div>
-              <div className="le-metric-card"><span>LTV</span><strong>{ltv}</strong><small>{form.loanType === 'Home loan' ? `RBI benchmark cap: ${homeLtvLimit}%` : 'Loan amount ÷ collateral value'}</small></div>
-              <div className="le-metric-card"><span>DSCR estimate</span><strong>{dscr}</strong><small>Monthly net income ÷ total debt service</small></div>
-              <div className="le-metric-card"><span>Net disposable ratio</span><strong>{ndir}</strong><small>Available after expenses and EMIs ÷ gross income</small></div>
-              <div className="le-metric-card"><span>CIBIL score</span><strong>{form.cibilScore || '—'}</strong><small>{cibilBand}</small></div>
-            </div>
-            <div className="le-capacity">
-              <div className="le-capacity-item"><span>Estimated max loan at 50% FOIR</span><strong>{totalIncome > 0 && tenureMonths > 0 ? `₹${money(maxAffordableLoan)}` : '—'}</strong></div>
-              <div className="le-capacity-item"><span>Monthly balance after proposed EMI</span><strong>{totalIncome > 0 ? `₹${money(monthlySurplus)}` : '—'}</strong></div>
-            </div>
-            <ul className="le-review-list" aria-label="Screening considerations">
-              {decision ? [...screeningFlags, ...reviewFlags].length ? [...screeningFlags, ...reviewFlags].map((flag) => <li key={flag}><AlertTriangle size={13} />{flag}</li>) : <li><Check size={13} />No screening flags from the entered information.</li> : <li><AlertTriangle size={13} />Submit the completed inputs to run the screening checks.</li>}
-            </ul>
-            <details className="le-guidance">
-              <summary>Formula & screening references</summary>
-              <div className="le-guidance-content">
-                <p><strong>EMI:</strong> reducing-balance payment based on requested principal, annual rate and tenure.</p>
-                <p><strong>DTI:</strong> (existing monthly debt + proposed EMI) ÷ gross monthly income × 100.</p>
-                <p><strong>FOIR:</strong> total monthly EMIs ÷ income remaining after listed expenses × 100. The 40% review and 50% ceiling are indicative lender-screening assumptions.</p>
-                <p><strong>Home-loan LTV:</strong> requested loan ÷ property value. RBI benchmark ceilings are 90% up to ₹30 lakh, 80% above ₹30 lakh to ₹75 lakh, and 75% above ₹75 lakh.</p>
-                <p><strong>DSCR / net disposable:</strong> monthly net income ÷ debt service; and (net income − debt service) ÷ gross income × 100.</p>
-                <p><strong>Credit score:</strong> 750+ is treated as a preferred screening range and below 650 as a review flag, not an RBI-mandated cutoff.</p>
-              </div>
-            </details>
-            <p className="le-disclaimer">This calculator is a preliminary estimate, not an approval, offer, or credit decision. RBI LTV limits apply to housing finance; lender rules, verified income, obligations, property valuation and applicable regulations determine the final result.</p>
-          </aside>
         </div>
       </main>
     </AppShell>
