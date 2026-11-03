@@ -1,7 +1,7 @@
 const STORAGE_KEY = 'los_lead_records';
 
 const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_URL || 'https://los-backend-at5n.onrender.com'
+  process.env.NEXT_PUBLIC_API_URL || 'https://los-backend-dqay.onrender.com'
 ).replace(/\/+$/, '');
 export const USER_ORGANIZATION_ID = 3;
 export const USER_ORGANIZATION_CODE = 'BOIBA01';
