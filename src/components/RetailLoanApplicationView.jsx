@@ -36,7 +36,7 @@ const TABS = [
 
 function displayValue(value, label = '') {
   if (value === undefined || value === null || String(value).trim() === '') {
-    return 'Not provided';
+    return 'Not Provided';
   }
   if (/date|expiry|issue|effective/i.test(label)) {
     return formatApplicationDate(value);
@@ -79,11 +79,12 @@ export default function RetailLoanApplicationView({ application, onBack, backLab
   const applicationId = getApplicationId(application);
   const savedCustomerName = getCustomerName(application);
   const customerName = savedCustomerName === 'Not available'
-    ? [form.firstName, form.middleName, form.lastName].filter(Boolean).join(' ') || 'Rohan Mehta'
+    ? [form.firstName, form.middleName, form.lastName].filter(Boolean).join(' ') || 'Not Provided'
     : savedCustomerName;
-  const rawLoan = form.productName || application?.product; const loanType = (!rawLoan || /gold/i.test(rawLoan)) ? 'Retail Personal Loan' : rawLoan;
-  const amount = application?.amount || form.loanAmount || '250000';
-  const status = application?.status || form.accountStatus || 'In review';
+  const rawLoan = form.productName || application?.product;
+  const loanType = rawLoan && !/gold/i.test(rawLoan) ? rawLoan : 'Not Provided';
+  const amount = application?.amount ?? form.loanAmount;
+  const status = application?.status || form.accountStatus;
   const repaymentRows = useMemo(() => getRepaymentRows(form), [form]);
 
   const populatedParties = form.relatedParties.filter((party) =>
@@ -540,8 +541,8 @@ export default function RetailLoanApplicationView({ application, onBack, backLab
         .retail-view-summary {
           display: grid;
           grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 14px;
-          margin-bottom: 22px;
+          gap: 12px;
+          margin-bottom: 20px;
         }
 
         .retail-summary-item {
@@ -616,19 +617,22 @@ export default function RetailLoanApplicationView({ application, onBack, backLab
         /* Tabs Navigation (matching Reference UI) */
         .retail-view-tabs {
           display: flex;
-          gap: 6px;
+          gap: 5px;
           overflow-x: auto;
           overflow-y: hidden;
-          padding-bottom: 14px;
-          border-bottom: 1px solid #e5ecec;
+          padding: 5px;
+          border: 1px solid #e3ebea;
+          border-radius: 9px;
+          background: #f7faf9;
           scrollbar-width: thin;
         }
 
         .retail-view-tab {
           flex: 0 0 auto;
-          padding: 8px 14px;
+          min-height: 37px;
+          padding: 8px 13px;
           border: 1px solid transparent;
-          border-radius: 7px;
+          border-radius: 6px;
           background: transparent;
           color: #60747a;
           font-family: inherit;
@@ -645,36 +649,42 @@ export default function RetailLoanApplicationView({ application, onBack, backLab
         }
 
         .retail-view-tab.active {
-          border-color: #cfe1df;
-          background: #edf6f4;
-          color: #165f5c;
+          border-color: #c5ddda;
+          background: #e8f3f1;
+          color: #145e5b;
+          box-shadow: inset 0 -2px 0 #177e7a;
+        }
+
+        .retail-view-tab:focus-visible {
+          outline: 3px solid rgba(23, 126, 122, 0.22);
+          outline-offset: 1px;
         }
 
         /* Tabpanel */
         .retail-view-tabpanel {
           min-height: 280px;
-          padding: 22px 2px 8px;
+          padding: 16px 0 8px;
           outline: none;
         }
 
         .retail-view-sections-stack {
           display: flex;
           flex-direction: column;
-          gap: 20px;
+          gap: 14px;
         }
 
         .retail-view-section {
-          border: 1px solid #dfe9eb;
-          border-radius: 10px;
+          border: 1px solid #e2eaea;
+          border-radius: 9px;
           background: #fff;
-          padding: 20px 22px 18px;
-          box-shadow: 0 1px 4px rgba(18, 42, 54, 0.02);
+          padding: 18px;
+          box-shadow: 0 2px 8px rgba(23, 63, 73, 0.03);
         }
 
         .retail-view-section-heading {
-          margin-bottom: 18px;
+          margin-bottom: 14px;
           padding-bottom: 10px;
-          border-bottom: 1px solid #f0f4f5;
+          border-bottom: 1px solid #edf2f1;
         }
 
         .retail-view-section-heading h2 {
@@ -692,31 +702,31 @@ export default function RetailLoanApplicationView({ application, onBack, backLab
         }
 
         /* 3-Column Detail Grid (matching Reference UI) */
-        .retail-view-grid {
+        :global(.retail-view-grid) {
           display: grid;
           grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 12px;
+          gap: 9px;
         }
 
-        .retail-view-detail {
+        :global(.retail-view-detail) {
           min-width: 0;
-          padding: 13px 15px;
-          border: 1px solid #e8eeec;
-          border-radius: 8px;
-          background: #fff;
+          padding: 11px 12px;
+          border: 1px solid #edf2f1;
+          border-radius: 7px;
+          background: #fbfdfd;
           display: flex;
           flex-direction: column;
           gap: 5px;
         }
 
-        .retail-view-detail-label {
+        :global(.retail-view-detail-label) {
           color: #718185;
           font-size: 11px;
           font-weight: 500;
         }
 
-        .retail-view-detail-value {
-          overflow-wrap: break-word;
+        :global(.retail-view-detail-value) {
+          overflow-wrap: anywhere;
           color: #1d3b48;
           font-size: 13px;
           font-weight: 600;
@@ -814,7 +824,7 @@ export default function RetailLoanApplicationView({ application, onBack, backLab
             grid-template-columns: repeat(2, minmax(0, 1fr));
           }
 
-          .retail-view-grid {
+          :global(.retail-view-grid) {
             grid-template-columns: repeat(2, minmax(0, 1fr));
           }
         }
@@ -828,7 +838,7 @@ export default function RetailLoanApplicationView({ application, onBack, backLab
             grid-template-columns: 1fr;
           }
 
-          .retail-view-grid {
+          :global(.retail-view-grid) {
             grid-template-columns: 1fr;
           }
 
@@ -837,9 +847,7 @@ export default function RetailLoanApplicationView({ application, onBack, backLab
             font-size: 11px;
           }
 
-          .retail-view-section {
-            padding: 16px 14px;
-          }
+          .retail-view-section { padding: 14px; }
         }
       `}</style>
     </AppShell>
