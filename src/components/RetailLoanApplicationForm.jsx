@@ -64,93 +64,90 @@ export function createInitialRetailLoanForm(application) {
     ? savedCustomerName.split(/\s+/).filter(Boolean)
     : [];
 
-  const rawProduct = application?.productName || application?.product || goldLoan.productName;
-  const isGold = !rawProduct || /gold/i.test(rawProduct);
-  const retailProductName = isGold ? 'Retail Personal Loan' : rawProduct;
-  const rawProductCode = application?.productCode || goldLoan.productCode;
-  const retailProductCode = isGold || !rawProductCode || /gld/i.test(rawProductCode) ? 'RTL-PERS-01' : rawProductCode;
-  const rawSchemeCode = application?.schemeCode || goldLoan.schemeCode;
-  const retailSchemeCode = isGold || !rawSchemeCode || /gld/i.test(rawSchemeCode) ? 'SCH-RTL-01' : rawSchemeCode;
-  const rawSchemeDesc = application?.schemeDescription || goldLoan.schemeDescription;
-  const retailSchemeDesc = isGold || !rawSchemeDesc || /gold/i.test(rawSchemeDesc) ? 'Standard Prime Scheme' : rawSchemeDesc;
+  const retailProductName = application?.productName
+    || goldLoan.productName
+    || (application?.product && !/gold/i.test(application.product) ? application.product : '');
+  const retailProductCode = application?.productCode || goldLoan.productCode || '';
+  const retailSchemeCode = application?.schemeCode || goldLoan.schemeCode || '';
+  const retailSchemeDesc = application?.schemeDescription || goldLoan.schemeDescription || '';
 
   const rawAccountNo = application?.loanAccountNumber || goldLoan.loanAccountNumber || '';
   const retailAccountNo = rawAccountNo ? rawAccountNo.replace(/^GLA-/i, 'RLA-') : '';
 
-  const initialAmount = String(application?.amount || goldLoan.sanctionLimit || '').replace(/[^\d.]/g, '') || (application ? '250000' : '');
+  const initialAmount = String(application?.amount ?? goldLoan.sanctionLimit ?? '').replace(/[^\d.]/g, '');
 
   const initialForm = {
     loanAccountNumber: retailAccountNo,
     effectiveDate: application?.effectiveDate || goldLoan.effectiveDate || application?.applicationDate || '',
-    customerId: application?.customerId || goldLoan.customerId || (application ? 'CUS-2024-00841' : ''),
-    branch: application?.branch || goldLoan.branch || (application ? 'Main Branch' : ''),
-    title: application?.title || goldLoan.title || (application ? 'Mr' : ''),
-    firstName: nameParts[0] || goldLoan.firstName || (application ? 'Rohan' : ''),
+    customerId: application?.customerId || goldLoan.customerId || '',
+    branch: application?.branch || goldLoan.branch || '',
+    title: application?.title || goldLoan.title || '',
+    firstName: nameParts[0] || goldLoan.firstName || '',
     middleName: nameParts.length > 2 ? nameParts.slice(1, -1).join(' ') : (goldLoan.middleName || ''),
-    lastName: nameParts.length > 1 ? nameParts[nameParts.length - 1] : (goldLoan.lastName || (application ? 'Mehta' : '')),
+    lastName: nameParts.length > 1 ? nameParts[nameParts.length - 1] : (goldLoan.lastName || ''),
     productCode: retailProductCode,
     productName: retailProductName,
     schemeCode: retailSchemeCode,
     schemeDescription: retailSchemeDesc,
-    accountStatus: application?.accountStatus || goldLoan.accountStatus || application?.status || (application ? 'Active' : ''),
-    modeOfOperation: application?.modeOfOperation || goldLoan.modeOfOperation || (application ? 'Single' : ''),
+    accountStatus: application?.accountStatus || goldLoan.accountStatus || application?.status || '',
+    modeOfOperation: application?.modeOfOperation || goldLoan.modeOfOperation || '',
     lastTransactionDate: application?.lastTransactionDate || goldLoan.lastTransactionDate || application?.applicationDate || '',
-    sanctionedDate: application?.sanctionedDate || goldLoan.sanctionedDate || application?.applicationDate || (application ? '2024-06-18' : ''),
+    sanctionedDate: application?.sanctionedDate || goldLoan.sanctionedDate || application?.applicationDate || '',
     loanAmount: initialAmount,
-    interestRate: application?.interestRate || goldLoan.interestRate || (application ? '10.5' : ''),
-    offsetRate: application?.offsetRate || (application ? '0.5' : ''),
-    totalInterestRate: application?.totalInterestRate || (application ? '11.0' : ''),
-    moratorium: application?.moratorium || (application ? '0' : ''),
-    expiryDate: application?.expiryDate || goldLoan.expiryDate || (application ? '2025-06-18' : ''),
-    instalmentAmount: application?.instalmentAmount || goldLoan.instalmentAmount || (application ? '22450' : ''),
-    instalmentStartDate: application?.instalmentStartDate || goldLoan.repaymentStartDate || (application ? '2024-07-18' : ''),
-    sanctioningAuthority: application?.sanctioningAuthority || goldLoan.sanctionAuthority || (application ? 'Branch Manager' : ''),
-    tenureMonths: application?.tenureMonths || goldLoan.tenureMonths || (application ? '12' : ''),
-    emiType: application?.emiType || 'Monthly',
-    bulletPayment: application?.bulletPayment || (application ? '0' : ''),
-    instalmentEndDate: application?.instalmentEndDate || application?.expiryDate || goldLoan.expiryDate || (application ? '2025-06-18' : ''),
-    purposeCode: application?.purposeCode || goldLoan.basicDetails?.purposeLoan || (application ? 'PUR-01' : ''),
-    prioritySector: application?.prioritySector || (goldLoan.basicDetails?.womenSector === 'Yes' ? 'Yes' : (application ? 'No' : '')),
-    prioritySectorCode: application?.prioritySectorCode || goldLoan.basicDetails?.sectorCode || (application ? 'RETAIL' : ''),
-    industryType: application?.industryType || (application ? 'Services' : ''),
-    industrySubType: application?.industrySubType || (application ? 'Retail Trade' : ''),
-    physicallyChallenged: application?.physicallyChallenged || (application ? 'No' : ''),
-    termCode: application?.termCode || goldLoan.basicDetails?.termCode || (application ? 'SHORT' : ''),
-    securityId: application?.securityId || (goldLoan.security?.securityId ? goldLoan.security.securityId.replace(/^SEC-/i, 'SEC-RTL-') : (application ? 'SEC-RTL-01' : '')),
-    securityType: application?.securityType || (application ? 'Immovable Property' : ''),
-    securityEffectiveDate: application?.securityEffectiveDate || application?.effectiveDate || goldLoan.effectiveDate || (application ? '2024-06-18' : ''),
-    assetType: application?.assetType || (application ? 'Residential Apartment' : ''),
-    securityAmount: application?.securityAmount || goldLoan.security?.limitAvailable || (application ? '350000' : ''),
-    marginPercent: application?.marginPercent || goldLoan.security?.marginPercent || (application ? '20' : ''),
-    assetAddress: application?.assetAddress || (application ? 'Flat 402, Green Heights' : ''),
-    assetAddressLine2: application?.assetAddressLine2 || (application ? 'MG Road' : ''),
-    city: application?.city || (application ? 'Mumbai' : ''),
-    state: application?.state || (application ? 'Maharashtra' : ''),
-    pincode: application?.pincode || (application ? '400001' : ''),
-    valuationAmount: application?.valuationAmount || (application ? '350000' : ''),
-    valuerName: application?.valuerName || goldLoan.security?.valuerDescription || (application ? 'Apex Valuers Pvt Ltd' : ''),
-    valuationDate: application?.valuationDate || application?.effectiveDate || goldLoan.effectiveDate || (application ? '2024-06-18' : ''),
-    inspectionBy: application?.inspectionBy || (application ? 'Technical Officer' : ''),
-    inspectionDate: application?.inspectionDate || application?.effectiveDate || goldLoan.effectiveDate || (application ? '2024-06-18' : ''),
-    inspectionReportName: application?.inspectionReportName || (application ? 'valuation_report_rohan.pdf' : ''),
-    securityValue: application?.securityValue || (application ? '350000' : ''),
-    insuranceCompany: application?.insuranceCompany || (application ? 'National Insurance Co' : ''),
-    policyNumber: application?.policyNumber || (application ? 'POL-2024-9981' : ''),
-    insuranceIssueDate: application?.insuranceIssueDate || application?.effectiveDate || goldLoan.effectiveDate || (application ? '2024-06-18' : ''),
-    premiumAmount: application?.premiumAmount || (application ? '4500' : ''),
-    sumAssured: application?.sumAssured || (application ? '350000' : ''),
-    insuranceExpiryDate: application?.insuranceExpiryDate || application?.expiryDate || goldLoan.expiryDate || (application ? '2025-06-18' : ''),
-    disbursementAccountNumber: application?.disbursementAccountNumber || goldLoan.disbursement?.accountNumber || (application ? '041018200001' : ''),
-    disbursementAccountType: application?.disbursementAccountType || goldLoan.disbursement?.accountType || (application ? 'Savings Account' : ''),
-    bankName: application?.bankName || goldLoan.disbursement?.bankName || (application ? 'Example Bank' : ''),
-    ifscCode: application?.ifscCode || goldLoan.disbursement?.ifscCode || (application ? 'EXAM0000410' : ''),
-    disbursementMode: application?.disbursementMode || goldLoan.disbursement?.mode || (application ? 'NEFT' : ''),
+    interestRate: application?.interestRate || goldLoan.interestRate || '',
+    offsetRate: application?.offsetRate || '',
+    totalInterestRate: application?.totalInterestRate || '',
+    moratorium: application?.moratorium || '',
+    expiryDate: application?.expiryDate || goldLoan.expiryDate || '',
+    instalmentAmount: application?.instalmentAmount || goldLoan.instalmentAmount || '',
+    instalmentStartDate: application?.instalmentStartDate || goldLoan.repaymentStartDate || '',
+    sanctioningAuthority: application?.sanctioningAuthority || goldLoan.sanctionAuthority || '',
+    tenureMonths: application?.tenureMonths || goldLoan.tenureMonths || '',
+    emiType: application?.emiType || '',
+    bulletPayment: application?.bulletPayment || '',
+    instalmentEndDate: application?.instalmentEndDate || application?.expiryDate || goldLoan.expiryDate || '',
+    purposeCode: application?.purposeCode || goldLoan.basicDetails?.purposeLoan || '',
+    prioritySector: application?.prioritySector || (goldLoan.basicDetails?.womenSector === 'Yes' ? 'Yes' : ''),
+    prioritySectorCode: application?.prioritySectorCode || goldLoan.basicDetails?.sectorCode || '',
+    industryType: application?.industryType || '',
+    industrySubType: application?.industrySubType || '',
+    physicallyChallenged: application?.physicallyChallenged || '',
+    termCode: application?.termCode || goldLoan.basicDetails?.termCode || '',
+    securityId: application?.securityId || goldLoan.security?.securityId || '',
+    securityType: application?.securityType || '',
+    securityEffectiveDate: application?.securityEffectiveDate || application?.effectiveDate || goldLoan.effectiveDate || '',
+    assetType: application?.assetType || '',
+    securityAmount: application?.securityAmount || goldLoan.security?.limitAvailable || '',
+    marginPercent: application?.marginPercent || goldLoan.security?.marginPercent || '',
+    assetAddress: application?.assetAddress || '',
+    assetAddressLine2: application?.assetAddressLine2 || '',
+    city: application?.city || '',
+    state: application?.state || '',
+    pincode: application?.pincode || '',
+    valuationAmount: application?.valuationAmount || '',
+    valuerName: application?.valuerName || goldLoan.security?.valuerDescription || '',
+    valuationDate: application?.valuationDate || application?.effectiveDate || goldLoan.effectiveDate || '',
+    inspectionBy: application?.inspectionBy || '',
+    inspectionDate: application?.inspectionDate || application?.effectiveDate || goldLoan.effectiveDate || '',
+    inspectionReportName: application?.inspectionReportName || '',
+    securityValue: application?.securityValue || '',
+    insuranceCompany: application?.insuranceCompany || '',
+    policyNumber: application?.policyNumber || '',
+    insuranceIssueDate: application?.insuranceIssueDate || application?.effectiveDate || goldLoan.effectiveDate || '',
+    premiumAmount: application?.premiumAmount || '',
+    sumAssured: application?.sumAssured || '',
+    insuranceExpiryDate: application?.insuranceExpiryDate || application?.expiryDate || goldLoan.expiryDate || '',
+    disbursementAccountNumber: application?.disbursementAccountNumber || goldLoan.disbursement?.accountNumber || '',
+    disbursementAccountType: application?.disbursementAccountType || goldLoan.disbursement?.accountType || '',
+    bankName: application?.bankName || goldLoan.disbursement?.bankName || '',
+    ifscCode: application?.ifscCode || goldLoan.disbursement?.ifscCode || '',
+    disbursementMode: application?.disbursementMode || goldLoan.disbursement?.mode || '',
     disbursementAmount: application?.disbursementAmount || goldLoan.disbursement?.amount || initialAmount,
-    relatedParties: Array.isArray(savedForm.relatedParties) && savedForm.relatedParties.length > 0
+    relatedParties: Array.isArray(savedForm.relatedParties)
       ? savedForm.relatedParties.map((party) => ({ ...blankRelatedParty(), ...party }))
-      : Array.isArray(goldLoan.relatedParties) && goldLoan.relatedParties.length > 0
+      : Array.isArray(goldLoan.relatedParties)
         ? goldLoan.relatedParties.map((party) => ({ ...blankRelatedParty(), ...party }))
-        : Array.from({ length: 5 }, blankRelatedParty),
+        : [blankRelatedParty()],
   };
 
   const formFields = Object.keys(initialForm).filter((key) => key !== 'relatedParties');
@@ -190,7 +187,7 @@ export function createInitialRetailLoanForm(application) {
     ...initialForm,
     ...applicationFields,
     ...savedForm,
-    relatedParties: Array.isArray(savedForm.relatedParties) && savedForm.relatedParties.length > 0
+    relatedParties: Array.isArray(savedForm.relatedParties)
       ? savedForm.relatedParties.map((party) => ({ ...blankRelatedParty(), ...party }))
       : initialForm.relatedParties,
   };
@@ -609,7 +606,7 @@ export default function RetailLoanApplicationForm({
       const cleared = { ...current };
       fieldsByStep[currentStep].forEach((field) => {
         cleared[field] = field === 'relatedParties'
-          ? Array.from({ length: 5 }, blankRelatedParty)
+          ? [blankRelatedParty()]
           : '';
       });
       return cleared;
@@ -633,20 +630,19 @@ export default function RetailLoanApplicationForm({
   return (
     <AppShell title={isEditMode ? 'Edit Retail Loan Application' : 'Retail Loan Application'}>
       <div className="retail-form-page">
+        <button
+          className="loan-form-back"
+          type="button"
+          onClick={cancel}
+          aria-label={`Back to ${backLabel}`}
+          title={`Back to ${backLabel}`}
+        >
+          <ArrowLeft size={18} aria-hidden="true" />
+          <span>Back</span>
+        </button>
         <PageHeader
           title={isEditMode ? 'Edit Retail Loan Application' : 'Retail Loan Application'}
           description={isEditMode ? `Application ID: ${getApplicationId(application)}` : 'Complete the retail loan origination steps below.'}
-          action={(
-            <button
-              className="icon-button loan-dashboard-back"
-              type="button"
-              onClick={cancel}
-              aria-label={`Back to ${backLabel}`}
-              title={`Back to ${backLabel}`}
-            >
-              <ArrowLeft size={19} aria-hidden="true" />
-            </button>
-          )}
         />
 
         <Card className="loan-application-card">
@@ -735,10 +731,10 @@ export default function RetailLoanApplicationForm({
                       <h3 className="retail-section-title">Loan Product Information</h3>
                     </div>
                     <div className="retail-grid two-column">
-                      {input('Product Code', 'productCode', { placeholder: 'e.g. RTL-PERS-01' })}
-                      {input('Product Description', 'productName', { placeholder: 'e.g. Retail Personal Loan' })}
-                      {input('Scheme Code', 'schemeCode', { placeholder: 'e.g. SCH-01' })}
-                      {input('Scheme Description', 'schemeDescription', { placeholder: 'e.g. Standard Prime Scheme' })}
+                      {input('Product Code', 'productCode')}
+                      {input('Product Description', 'productName')}
+                      {input('Scheme Code', 'schemeCode')}
+                      {input('Scheme Description', 'schemeDescription')}
                       {input('Mode of Operation', 'modeOfOperation', {
                         options: ['Single', 'Joint', 'Either or Survivor', 'Anyone or Survivor'],
                       })}
@@ -1086,6 +1082,31 @@ export default function RetailLoanApplicationForm({
         .retail-form-page {
           min-width: 0;
           color: #243039;
+        }
+
+        :global(.loan-form-back) {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          min-height: 38px;
+          margin-bottom: 12px;
+          padding: 0 13px;
+          border: 1px solid #dfe8e8;
+          border-radius: 8px;
+          background: #fff;
+          color: #405d61;
+          font: inherit;
+          font-size: 13px;
+          font-weight: 650;
+          cursor: pointer;
+          transition: border-color .15s ease, background .15s ease, color .15s ease;
+        }
+
+        :global(.loan-form-back:hover) {
+          border-color: #b8d4cf;
+          background: #f4faf9;
+          color: #177e7a;
         }
 
         :global(.loan-dashboard-back) {
@@ -1663,6 +1684,7 @@ export default function RetailLoanApplicationForm({
         .retail-step-item:focus-visible,
         .retail-btn-secondary:focus-visible,
         .retail-btn-primary:focus-visible,
+        :global(.loan-form-back:focus-visible),
         :global(.loan-dashboard-back:focus-visible) {
           outline: 3px solid rgba(23, 126, 122, 0.35);
           outline-offset: 2px;

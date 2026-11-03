@@ -114,6 +114,10 @@
 .loan-step.active .loan-step-bubble{box-shadow:0 0 0 4px rgba(31,143,114,.12)}
 .loan-step.active{color:var(--teal)}
 .loan-step-text{white-space:nowrap}
+.customer-onboarding-step{padding:0;border:0;background:transparent;font:inherit;cursor:pointer}
+.customer-onboarding-step:focus-visible{outline:3px solid rgba(31,143,114,.28);outline-offset:4px;border-radius:4px}
+.customer-onboarding-step:hover{color:var(--teal)}
+.customer-onboarding-step.done .loan-step-bubble{background:#e8f5ef}
 .loan-form-section{padding-top:8px}
 .loan-form-section h2{margin:0 0 18px;font-size:28px;color:#1d3b48}
 .loan-form-section h3{margin:24px 0 18px;font-size:20px;color:#1d3b48}

@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'https://los-backend-at5n.onrender.com';
+const API_BASE_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'https://los-backend-dqay.onrender.com';
 const endpoints = ['/api/v1/loan-products', '/api/v1/masters/loan-products'];
 
 export async function GET(request) {

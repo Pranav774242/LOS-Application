@@ -53,48 +53,85 @@ export function createApplicationForm(application) {
   const savedSecurity = savedForm.security && typeof savedForm.security === 'object'
     ? savedForm.security
     : {};
+  const applicationSecurity = application.security && typeof application.security === 'object'
+    ? application.security
+    : {};
   const savedCharges = savedForm.charges && typeof savedForm.charges === 'object'
     ? savedForm.charges
+    : {};
+  const applicationCharges = application.charges && typeof application.charges === 'object'
+    ? application.charges
     : {};
   const savedBasicDetails = savedForm.basicDetails && typeof savedForm.basicDetails === 'object'
     ? savedForm.basicDetails
     : {};
+  const applicationBasicDetails = application.basicDetails && typeof application.basicDetails === 'object'
+    ? application.basicDetails
+    : {};
   const savedDisbursement = savedForm.disbursement && typeof savedForm.disbursement === 'object'
     ? savedForm.disbursement
     : {};
-  const relatedParties = Array.isArray(savedForm.relatedParties)
-    ? savedForm.relatedParties.map((party, index) => ({
-      ...initialForm.relatedParties[index],
-      ...(party && typeof party === 'object' ? party : {}),
-      id: party?.id || `party-${index + 1}`,
-    }))
-    : initialForm.relatedParties;
-  const inventoryItems = Array.isArray(savedSecurity.inventoryItems)
-    ? savedSecurity.inventoryItems.map((item, index) => ({
-      ...initialForm.security.inventoryItems[index],
-      ...(item && typeof item === 'object' ? item : {}),
-      id: item?.id || `inventory-${index + 1}`,
-    }))
-    : initialForm.security.inventoryItems;
+  const applicationDisbursement = application.disbursement && typeof application.disbursement === 'object'
+    ? application.disbursement
+    : {};
+  const savedRelatedParties = Array.isArray(savedForm.relatedParties)
+    ? savedForm.relatedParties
+    : Array.isArray(application.relatedParties)
+      ? application.relatedParties
+      : initialForm.relatedParties;
+  const relatedParties = savedRelatedParties.map((party, index) => ({
+    ...initialForm.relatedParties[0],
+    ...(party && typeof party === 'object' ? party : {}),
+    id: party?.id || `party-${index + 1}`,
+  }));
+  const savedInventoryItems = Array.isArray(savedSecurity.inventoryItems)
+    ? savedSecurity.inventoryItems
+    : Array.isArray(applicationSecurity.inventoryItems)
+      ? applicationSecurity.inventoryItems
+      : initialForm.security.inventoryItems;
+  const inventoryItems = savedInventoryItems.map((item, index) => ({
+    ...initialForm.security.inventoryItems[index],
+    ...(item && typeof item === 'object' ? item : {}),
+    id: item?.id || `inventory-${index + 1}`,
+  }));
+  const nestedFields = new Set(['relatedParties', 'charges', 'basicDetails', 'security', 'disbursement']);
+  const applicationFields = Object.fromEntries(
+    Object.keys(initialForm)
+      .filter((field) => {
+        const value = application[field];
+        return !nestedFields.has(field)
+          && value !== undefined
+          && value !== null
+          && !(typeof value === 'string' && !value.trim());
+      })
+      .map((field) => [field, application[field]]),
+  );
 
   return {
     ...initialForm,
+    ...applicationFields,
     ...savedForm,
     customerId: savedForm.customerId || application.customerId || '',
     branch: savedForm.branch || application.branch || '',
-    firstName: savedForm.firstName || nameParts[0] || '',
-    lastName: savedForm.lastName || (nameParts.length > 1 ? nameParts.slice(1).join(' ') : ''),
-    sanctionLimit: savedForm.sanctionLimit
-      || String(application.amount || '').replace(/[^\d.]/g, ''),
+    firstName: savedForm.firstName || application.firstName || nameParts[0] || '',
+    lastName: savedForm.lastName || application.lastName
+      || (nameParts.length > 1 ? nameParts.slice(1).join(' ') : ''),
+    sanctionLimit: savedForm.sanctionLimit || application.sanctionLimit
+      || String(application.amount ?? '').replace(/[^\d.]/g, ''),
     relatedParties,
-    charges: { ...initialForm.charges, ...savedCharges },
-    basicDetails: { ...initialForm.basicDetails, ...savedBasicDetails },
+    charges: { ...initialForm.charges, ...applicationCharges, ...savedCharges },
+    basicDetails: { ...initialForm.basicDetails, ...applicationBasicDetails, ...savedBasicDetails },
     security: {
       ...initialForm.security,
+      ...applicationSecurity,
       ...savedSecurity,
       inventoryItems,
     },
-    disbursement: { ...initialForm.disbursement, ...savedDisbursement },
+    disbursement: {
+      ...initialForm.disbursement,
+      ...applicationDisbursement,
+      ...savedDisbursement,
+    },
   };
 }
 
@@ -225,7 +262,7 @@ const createInitialForm = () => ({
   schemeDescription: '',
   modeOfOperation: '',
   lastTransactionDate: '',
-  relatedParties: Array.from({ length: 5 }, (_, index) => ({
+  relatedParties: Array.from({ length: 1 }, (_, index) => ({
     id: `party-${index + 1}`,
     nameType: '',
     customerNo: '',
@@ -795,7 +832,12 @@ function hasDetailValue(value) {
   return typeof value === 'boolean';
 }
 
+function displayGoldLoanValue(value) {
+  return hasDetailValue(value) ? String(value) : 'Not Provided';
+}
+
 function formatGoldLoanDetail(field, value) {
+  if (!hasDetailValue(value)) return 'Not Provided';
   if (field.toLowerCase().includes('date')) return formatApplicationDate(value);
   if (
     ['sanctionLimit', 'instalmentAmount', 'limitAvailable', 'processingFees', 'valuationCharges', 'rate', 'amount', 'limit']
@@ -813,7 +855,6 @@ function formatGoldLoanDetail(field, value) {
 
 function getGoldLoanDetailEntries(values, fields) {
   return fields
-    .filter(([field]) => hasDetailValue(values[field]))
     .map(([field, label]) => ({
       label: label || goldLoanDetailLabels[field] || field,
       value: formatGoldLoanDetail(field, values[field]),
@@ -1103,20 +1144,23 @@ export function GoldLoanApplicationView({
                       <tbody>
                         {populatedInventory.map((item, index) => (
                           <tr key={item.id || `inventory-${index}`}>
-                            <td>{item.itemId || '—'}</td>
-                            <td>{item.ornamentDescription || '—'}</td>
-                            <td>{hasDetailValue(item.grossWeight) ? `${item.grossWeight} g` : '—'}</td>
-                            <td>{hasDetailValue(item.netWeight) ? `${item.netWeight} g` : '—'}</td>
-                            <td>{hasDetailValue(item.appraisalDate) ? formatApplicationDate(item.appraisalDate) : '—'}</td>
-                            <td>{item.purity || '—'}</td>
-                            <td>{hasDetailValue(item.rate) ? formatAmount(item.rate) : '—'}</td>
-                            <td>{hasDetailValue(item.amount) ? formatAmount(item.amount) : '—'}</td>
-                            <td>{hasDetailValue(item.limit) ? formatAmount(item.limit) : '—'}</td>
+                            <td>{displayGoldLoanValue(item.itemId)}</td>
+                            <td>{displayGoldLoanValue(item.ornamentDescription)}</td>
+                            <td>{hasDetailValue(item.grossWeight) ? `${item.grossWeight} g` : 'Not Provided'}</td>
+                            <td>{hasDetailValue(item.netWeight) ? `${item.netWeight} g` : 'Not Provided'}</td>
+                            <td>{hasDetailValue(item.appraisalDate) ? formatApplicationDate(item.appraisalDate) : 'Not Provided'}</td>
+                            <td>{displayGoldLoanValue(item.purity)}</td>
+                            <td>{hasDetailValue(item.rate) ? formatAmount(item.rate) : 'Not Provided'}</td>
+                            <td>{hasDetailValue(item.amount) ? formatAmount(item.amount) : 'Not Provided'}</td>
+                            <td>{hasDetailValue(item.limit) ? formatAmount(item.limit) : 'Not Provided'}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
+                )}
+                {populatedInventory.length === 0 && (
+                  <p className="gold-view-empty">No security inventory items have been provided.</p>
                 )}
               </GoldLoanDetailSection>
             )}
@@ -1161,6 +1205,9 @@ export function GoldLoanApplicationView({
                       </tbody>
                     </table>
                   </div>
+                )}
+                {populatedParties.length === 0 && (
+                  <p className="gold-view-empty">No related parties have been provided.</p>
                 )}
               </GoldLoanDetailSection>
             )}
@@ -1398,6 +1445,15 @@ export function GoldLoanApplicationView({
           }
           .gold-view-table tbody tr:last-child td { border-bottom: 0; }
           .gold-view-table tbody tr:hover { background: #fbfdfd; }
+          .gold-view-empty {
+            margin: 14px 0 0;
+            padding: 18px;
+            border: 1px dashed #dce7e5;
+            border-radius: 7px;
+            color: #718185;
+            font-size: 12px;
+            text-align: center;
+          }
           .gold-view-readonly-note {
             margin: 15px 0 0;
             color: #718185;
@@ -1444,7 +1500,10 @@ export function LoanApplicationFormPage({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isFormDirty, setIsFormDirty] = useState(false);
   const [saveError, setSaveError] = useState('');
-  const nextPartyId = useRef(5);
+  const nextPartyId = useRef(form.relatedParties.reduce((highestId, party) => {
+    const match = /^party-(\d+)$/.exec(party.id);
+    return match ? Math.max(highestId, Number(match[1])) : highestId;
+  }, 0));
   const nextInventoryId = useRef(form.security.inventoryItems.length);
   const cancelDeleteButtonRef = useRef(null);
   const confirmDeleteButtonRef = useRef(null);
@@ -1761,20 +1820,19 @@ export function LoanApplicationFormPage({
   return (
     <AppShell>
       <div className="loan-application-shell">
+        <button
+          className="loan-form-back"
+          type="button"
+          onClick={handleReturnToDashboard}
+          aria-label={`Back to ${backLabel}`}
+          title={`Back to ${backLabel}`}
+        >
+          <ArrowLeft size={18} aria-hidden="true" />
+          <span>Back</span>
+        </button>
         <PageHeader
           title={isEditMode ? 'Edit Gold Loan Application' : 'Gold Loan Application'}
           description={isEditMode ? `Application ID: ${getApplicationId(application)}` : undefined}
-          action={
-            <button
-              className="icon-button loan-dashboard-back"
-              type="button"
-              onClick={handleReturnToDashboard}
-              aria-label={`Back to ${backLabel}`}
-              title={`Back to ${backLabel}`}
-            >
-              <ArrowLeft size={19} aria-hidden="true" />
-            </button>
-          }
         />
 
         <Card className="loan-application-card">
@@ -2424,6 +2482,30 @@ export function LoanApplicationFormPage({
             height: 40px;
             border: 1px solid #dfe8e8;
             background: #fff;
+          }
+
+          :global(.loan-form-back) {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            min-height: 38px;
+            margin-bottom: 12px;
+            padding: 0 13px;
+            border: 1px solid #dfe8e8;
+            border-radius: 8px;
+            background: #fff;
+            color: #405d61;
+            font: inherit;
+            font-size: 13px;
+            font-weight: 650;
+            cursor: pointer;
+            transition: border-color .15s ease, background .15s ease, color .15s ease;
+          }
+          :global(.loan-form-back:hover) {
+            border-color: #b8d4cf;
+            background: #f4faf9;
+            color: #177e7a;
           }
 
           :global(.loan-dashboard-back:hover) {

@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'https://los-backend-at5n.onrender.com';
+const API_BASE_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'https://los-backend-dqay.onrender.com';
 const endpoints = [
   '/api/v1/banks/profile',
   '/api/v1/bank/profile',

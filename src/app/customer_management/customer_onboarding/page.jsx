@@ -1,8 +1,9 @@
 ﻿
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   ArrowLeft,
   ArrowRight,
@@ -18,6 +19,21 @@ import {
   Wallet
 } from 'lucide-react';
 import AppShell from '../../../components/AppShell';
+import { api } from '../../../services/api.js';
+import {
+  createCustomerRecord,
+  readCustomerRecords,
+  writeCustomerRecords,
+} from '../../../services/customerStorage';
+
+function createCustomerId(records) {
+  let id;
+  do {
+    const suffix = String(Math.floor(Math.random() * 100000)).padStart(5, '0');
+    id = `CUS-${new Date().getFullYear()}-${suffix}`;
+  } while (records.some((record) => record.id === id));
+  return id;
+}
 
 const wizardSteps = [
   { id: 'personal', label: 'Personal Details', icon: UserIcon },
@@ -166,6 +182,7 @@ const createInitialForm = () => ({
   motherName: '',
   email: '',
   customerType: '',
+  kycStatus: 'Pending',
   aadhaarNumber: '',
   gender: '',
   kycRegn: '',
@@ -811,10 +828,60 @@ function FileUpload({ label, file, onChange, error }) {
 }
 
 export default function LoanApplicationPage() {
+  const router = useRouter();
   const [currentStep, setCurrentStep] = useState(0);
   const [form, setForm] = useState(createInitialForm);
   const [validationErrors, setValidationErrors] = useState({});
   const [submissionSuccess, setSubmissionSuccess] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [customerId, setCustomerId] = useState('');
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [saveError, setSaveError] = useState('');
+
+  useEffect(() => {
+    const requestedCustomerId = new URLSearchParams(window.location.search).get('edit');
+    if (!requestedCustomerId) {
+      setIsInitialized(true);
+      return;
+    }
+
+    setIsEditMode(true);
+    setCustomerId(requestedCustomerId);
+    try {
+      const customer = readCustomerRecords(api.customers).find(
+        (record) => record.id === requestedCustomerId,
+      );
+      if (!customer) {
+        setLoadError('The selected customer could not be found.');
+        return;
+      }
+
+      const savedForm = customer.onboardingForm && typeof customer.onboardingForm === 'object'
+        ? customer.onboardingForm
+        : {};
+      const [firstName, ...lastNameParts] = String(customer.name || '').trim().split(/\s+/);
+      const digitsOnlyPhone = String(customer.phone || '').replace(/\D/g, '');
+      setForm({
+        ...createInitialForm(),
+        ...savedForm,
+        fullName: savedForm.fullName || firstName || '',
+        lastName: savedForm.lastName || lastNameParts.join(' '),
+        customerType: savedForm.customerType || customer.type || '',
+        kycStatus: savedForm.kycStatus || customer.kyc || 'Pending',
+        mobileNo: savedForm.mobileNo || (MOBILE_REGEX.test(digitsOnlyPhone) ? digitsOnlyPhone : ''),
+        email: savedForm.email || customer.email || '',
+        documents: Array.isArray(savedForm.documents) ? savedForm.documents : createDocuments('Retail'),
+        taxReturns: Array.isArray(savedForm.taxReturns) ? savedForm.taxReturns : createTaxReturns(),
+        previousEmployment: Array.isArray(savedForm.previousEmployment) ? savedForm.previousEmployment : [],
+        loanHistory: Array.isArray(savedForm.loanHistory) ? savedForm.loanHistory : [],
+      });
+    } catch (error) {
+      setLoadError(error instanceof Error ? `Customer details could not be loaded: ${error.message}` : 'Customer details could not be loaded.');
+    } finally {
+      setIsInitialized(true);
+    }
+  }, []);
 
   const updateField = (field, value) => {
     const sanitizedValue = sanitizeInput(field, value);
@@ -943,6 +1010,26 @@ export default function LoanApplicationPage() {
     return Object.keys(errors).length === 0;
   };
 
+  const navigateToStep = (targetStep) => {
+    if (targetStep <= currentStep) {
+      setCurrentStep(targetStep);
+      return;
+    }
+
+    const errorsByStep = {};
+    for (let step = currentStep; step < targetStep; step += 1) {
+      const stepErrors = validateStep(step, form);
+      errorsByStep[step] = stepErrors;
+      if (Object.keys(stepErrors).length) {
+        setValidationErrors((previous) => ({ ...previous, ...errorsByStep }));
+        setCurrentStep(step);
+        return;
+      }
+    }
+    setValidationErrors((previous) => ({ ...previous, ...errorsByStep }));
+    setCurrentStep(targetStep);
+  };
+
   const goNext = () => {
     if (!validateCurrentStep()) return;
 
@@ -969,7 +1056,28 @@ export default function LoanApplicationPage() {
       return;
     }
 
-    setSubmissionSuccess(true);
+    try {
+      const records = readCustomerRecords(api.customers);
+      const existingCustomer = records.find((record) => record.id === customerId);
+      const id = customerId || createCustomerId(records);
+      const updatedCustomer = createCustomerRecord(form, {
+        ...(existingCustomer || {}),
+        id,
+      });
+      writeCustomerRecords([
+        ...records.filter((record) => record.id !== id),
+        updatedCustomer,
+      ]);
+      setCustomerId(id);
+      setSaveError('');
+      setSubmissionSuccess(true);
+      if (!isEditMode) {
+        setIsEditMode(true);
+      }
+    } catch (error) {
+      setSaveError(error instanceof Error ? `Customer details could not be saved: ${error.message}` : 'Customer details could not be saved.');
+      setSubmissionSuccess(false);
+    }
   };
 
   const goBack = () => {
@@ -980,6 +1088,10 @@ export default function LoanApplicationPage() {
 
   const openDocument = (file) => {
     if (!file) return;
+    if (!(file instanceof Blob)) {
+      window.alert('The original file is not available in this browser session. Upload it again to preview.');
+      return;
+    }
 
     const fileUrl = URL.createObjectURL(file);
     const preview = window.open(fileUrl, '_blank');
@@ -998,6 +1110,10 @@ export default function LoanApplicationPage() {
 
   const downloadDocument = (file) => {
     if (!file) return;
+    if (!(file instanceof Blob)) {
+      window.alert('The original file is not available in this browser session. Upload it again to download.');
+      return;
+    }
 
     const fileUrl = URL.createObjectURL(file);
     const link = document.createElement('a');
@@ -1048,45 +1164,74 @@ export default function LoanApplicationPage() {
     }));
   };
 
+  if (!isInitialized || loadError) {
+    return (
+      <AppShell title={isEditMode ? 'Edit Individual Customer' : 'Individual Customer Onboarding'}>
+        <div className="loan-application-shell">
+          <Link href="/customer_management" className="loan-back-button" style={{ textDecoration: 'none' }}>
+            <ArrowLeft size={16} />
+            Back
+          </Link>
+          <div className="loan-application-card customer-onboarding-state">
+            {loadError ? (
+              <>
+                <h2>Unable to load customer</h2>
+                <p role="alert">{loadError}</p>
+              </>
+            ) : <p>Loading customer details...</p>}
+          </div>
+        </div>
+      </AppShell>
+    );
+  }
+
   return (
-    <AppShell title="Individual Customer Onboarding">
+    <AppShell title={isEditMode ? 'Edit Individual Customer' : 'Individual Customer Onboarding'}>
       <div className="loan-application-shell">
         <div className="loan-onboarding-heading" style={{ marginTop: '-15px', marginBottom: '26px', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <h1 style={{ margin: 0, color: '#23474C', font: '700 23px Manrope' }}>Individual Customer Onboarding</h1>
+          <div>
+            <h1 style={{ margin: 0, color: '#23474C', font: '700 23px Manrope' }}>{isEditMode ? 'Edit Individual Customer' : 'Individual Customer Onboarding'}</h1>
+            {isEditMode && <p className="customer-edit-id">Customer ID: {customerId}</p>}
+          </div>
           <Link href="/customer_management" className="loan-back-button" style={{ height: '32px', minWidth: 'auto', padding: '0 10px', gap: '5px', fontSize: '13px', background: '#368262', borderColor: '#368262', color: '#fff', textDecoration: 'none' }}>
             <ArrowLeft size={14} />
             Back
           </Link>
         </div>
         <div className="loan-application-card">
-          <div className="loan-stepper" aria-label="Application progress">
+          <nav className="loan-stepper" aria-label="Customer onboarding steps">
             {wizardSteps.map((step, index) => {
               const Icon = step.icon;
               const isActive = index === currentStep;
               const isDone = index < currentStep;
 
               return (
-                <div
+                <button
                   key={step.id}
-                  className={`loan-step ${isActive ? 'active' : ''} ${
+                  type="button"
+                  className={`loan-step customer-onboarding-step ${isActive ? 'active' : ''} ${
                     isDone ? 'done' : ''
                   }`}
+                  onClick={() => navigateToStep(index)}
+                  aria-current={isActive ? 'step' : undefined}
+                  aria-label={`Step ${index + 1}: ${step.label}${isDone ? ', completed' : ''}`}
                 >
                   <span className="loan-step-bubble">
                     <Icon size={16} aria-hidden="true" />
                   </span>
                   <span className="loan-step-text">{step.label}</span>
-                </div>
+                </button>
               );
             })}
-          </div>
+          </nav>
 
           {submissionSuccess && (
             <div className="loan-form-success" role="status">
-              <strong>Individual Customer Onboarding submitted successfully.</strong>
-              {/* <span>This is a frontend-only confirmation; no server submission has occurred.</span> */}
+              <strong>{isEditMode ? 'Customer details saved successfully.' : 'Individual Customer Onboarding submitted successfully.'}</strong>
+              <span>Customer ID: {customerId}</span>
             </div>
           )}
+          {saveError && <div className="loan-form-error" role="alert">{saveError}</div>}
 
           {/* Step 1: Personal Details */}
           {currentStep === 0 && (
@@ -1203,6 +1348,13 @@ export default function LoanApplicationPage() {
                   onChange={(value) => updateField('customerType', value)}
                   placeholder="Enter Customer Type"
                   error={currentStepErrors.customerType}
+                />
+
+                <Field
+                  label="KYC Status"
+                  value={form.kycStatus}
+                  onChange={(value) => updateField('kycStatus', value)}
+                  placeholder="Enter KYC Status"
                 />
 
                 <Field
