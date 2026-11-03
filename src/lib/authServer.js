@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "https://los-backend-at5n.onrender.com";
+const API_BASE_URL = (
+  process.env.NEXT_PUBLIC_API_URL
+).replace(/\/+$/, "");
 export const AUTH_SESSION_COOKIE = "los-session";
 const SESSION_TTL_SECONDS = 60 * 60 * 12;
 

@@ -1,6 +1,8 @@
 import { getBankProfile } from './bankProfile';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://los-backend-at5n.onrender.com';
+const API_BASE_URL = (
+  process.env.NEXT_PUBLIC_API_URL
+).replace(/\/+$/, '');
 
 export function getBankMaster() {
   return getBankProfile();
