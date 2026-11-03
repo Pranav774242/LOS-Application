@@ -44,6 +44,7 @@ const NAV = [
         href: "/customer_management",
       },
       { label: "Loan application", icon: FilePlus2, href: "/loan_application" },
+      { label: "Gold Loan Application", icon: Coins, href: "/gold_loan_application" },
     ],
   },
   {

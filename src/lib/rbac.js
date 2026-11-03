@@ -120,6 +120,9 @@ export function getRoutePermission(pathname) {
   if (pathname.startsWith('/lead_management') || pathname.startsWith('/lead_managenet') || pathname.startsWith('/lead_generation')) return ['lead-management', 'view'];
   if (pathname.startsWith('/customer_management/customer_onboarding')) return ['loan-applications', 'create'];
   if (pathname.startsWith('/customer_management')) return ['applicant-management', 'view'];
+  if (pathname.startsWith('/gold_loan_application/apply')) return ['loan-applications', 'create'];
+  if (pathname.startsWith('/gold_loan_application/edit/')) return ['loan-applications', 'edit'];
+  if (pathname.startsWith('/gold_loan_application')) return ['loan-applications', 'view'];
   if (pathname.startsWith('/master_creation')) return ['bank-management', 'edit'];
   if (pathname.startsWith('/bank_profile') || pathname.startsWith('/product_management')) {
     return ['bank-management', 'view'];
