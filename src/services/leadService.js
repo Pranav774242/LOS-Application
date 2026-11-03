@@ -168,7 +168,7 @@ export function getLeads() {
         if (Array.isArray(parsed)) return parsed;
       }
     } catch {
-      // Return no local leads when browser storage contains invalid data.
+     
     }
   }
 
