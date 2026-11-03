@@ -1,8 +1,9 @@
 export const LOGOUT_PENDING_KEY = "los-logout-pending";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "");
 
 export async function login(credentials) {
   return request(
-    "/api/v1/auth/login",
+    `${getApiBaseUrl()}/api/v1/auth/login`,
     credentials,
     "Unable to sign in",
   );
@@ -22,6 +23,14 @@ export async function logout() {
     undefined,
     "Unable to log out",
   );
+}
+
+function getApiBaseUrl() {
+  if (!API_BASE_URL) {
+    throw new Error("NEXT_PUBLIC_API_URL is not configured.");
+  }
+
+  return API_BASE_URL;
 }
 
 async function request(path, body, defaultMessage) {
