@@ -1,5 +1,5 @@
 const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_URL
+  process.env.NEXT_PUBLIC_API_URL || 'https://los-backend-dqay.onrender.com'
 ).replace(/\/+$/, '');
 const API_V1_URL = /\/api\/v\d+$/i.test(API_BASE_URL)
   ? API_BASE_URL
