@@ -2,7 +2,7 @@ export const LOGOUT_PENDING_KEY = "los-logout-pending";
 
 export async function login(credentials) {
   return request(
-    "/api/auth/login",
+    "/api/v1/auth/login",
     credentials,
     "Unable to sign in",
   );
