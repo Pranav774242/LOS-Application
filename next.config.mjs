@@ -1,7 +1,6 @@
-import path from 'node:path';
 import nextEnv from '@next/env';
 
-nextEnv.loadEnvConfig(path.join(process.cwd(), 'src'));
+nextEnv.loadEnvConfig(process.cwd());
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
