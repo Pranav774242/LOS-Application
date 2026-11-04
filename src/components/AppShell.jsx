@@ -14,11 +14,40 @@ import {
   ROLE_CHANGE_EVENT,
 } from '../lib/rbac';
 import { getUserProfile } from '../services/user_profile';
-import { LOGOUT_PENDING_KEY } from '../services/login';
+import { LOGOUT_PENDING_KEY, logout } from '../services/login';
+import './shell.css';
 
-export default function AppShell({ children }) {
+const SIDEBAR_STORAGE_KEY = 'los-sidebar-collapsed';
+
+export default function AppShell({ children, title }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarPreferenceLoaded, setSidebarPreferenceLoaded] = useState(false);
+  const [roles, setRoles] = useState(DEFAULT_ROLES);
+  const [authData, setAuthData] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [accessReady, setAccessReady] = useState(false);
+  const [accessError, setAccessError] = useState('');
+  const pathname = usePathname() || '';
+
+  useEffect(() => {
+    try {
+      setSidebarCollapsed(window.localStorage.getItem(SIDEBAR_STORAGE_KEY) === 'true');
+    } catch (error) {
+      console.error('Unable to load the saved sidebar preference.', error);
+    } finally {
+      setSidebarPreferenceLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!sidebarPreferenceLoaded) return;
+    try {
+      window.localStorage.setItem(SIDEBAR_STORAGE_KEY, String(sidebarCollapsed));
+    } catch (error) {
+      console.error('Unable to save the sidebar preference.', error);
+    }
+  }, [sidebarCollapsed, sidebarPreferenceLoaded]);
 
   useEffect(() => {
     const redirectIfLoggedOut = () => {
@@ -35,13 +64,6 @@ export default function AppShell({ children }) {
     window.addEventListener('pageshow', handlePageShow);
     return () => window.removeEventListener('pageshow', handlePageShow);
   }, []);
-
-  const [roles, setRoles] = useState(DEFAULT_ROLES);
-  const [authData, setAuthData] = useState(null);
-  const [profile, setProfile] = useState(null);
-  const [accessReady, setAccessReady] = useState(false);
-  const [accessError, setAccessError] = useState('');
-  const pathname = usePathname();
 
   useEffect(() => {
     let cancelled = false;
@@ -112,40 +134,72 @@ export default function AppShell({ children }) {
     () => ({ role: currentRole, loading: !accessReady, hasPermission }),
     [accessReady, currentRole, hasPermission]
   );
-  const routePermission = getRoutePermission(pathname || '');
+  const routePermission = getRoutePermission(pathname);
   const canViewRoute = !routePermission || hasPermission(...routePermission);
+  const currentUser = profile || authData?.user || authData?.profile || authData;
+
+  const handleLogout = async () => {
+    try {
+      window.sessionStorage.setItem(LOGOUT_PENDING_KEY, 'true');
+    } catch (error) {
+      console.error('Unable to save the logout state.', error);
+    }
+
+    try {
+      await logout();
+    } catch (error) {
+      console.error('Unable to complete server logout; completing local sign-out.', error);
+    } finally {
+      try {
+        window.localStorage.removeItem('authData');
+      } catch (error) {
+        console.error('Unable to clear the saved sign-in data.', error);
+      }
+      window.location.replace('/login');
+    }
+  };
+
+  const toggleSidebar = (nextCollapsed) => {
+    setSidebarCollapsed((current) =>
+      typeof nextCollapsed === 'boolean' ? nextCollapsed : !current
+    );
+  };
 
   return (
     <AccessContext.Provider value={accessContext}>
-      <div className="app-shell">
+      <div className="los-shell">
         <Sidebar
           open={sidebarOpen}
           collapsed={sidebarCollapsed}
-          onToggle={() => setSidebarCollapsed((collapsed) => !collapsed)}
+          onToggle={toggleSidebar}
           onClose={() => setSidebarOpen(false)}
           role={currentRole}
+          user={currentUser}
+          onLogout={handleLogout}
         />
-        <main className="main-content">
+        <div className="los-workspace">
           <Header menuOpen={sidebarOpen} onMenu={() => setSidebarOpen((open) => !open)} />
-          <div className="page-wrap">
-            {!accessReady ? (
-              <div role="status" aria-live="polite" style={{ padding: 24, color: '#708087' }}>
-                Checking page access…
-              </div>
-            ) : !currentRole || !canViewRoute ? (
-              <section role="alert" style={{ maxWidth: 620, margin: '48px auto', padding: 28, border: '1px solid #e5ecec', borderRadius: 8, background: '#fff' }}>
-                <h1 style={{ margin: '0 0 8px', color: '#173e46', fontSize: 20 }}>Access restricted</h1>
-                <p style={{ margin: 0, color: '#708087', fontSize: 13 }}>
+          <main className="main-content los-main-content">
+            <div className="page-wrap los-page-wrap">
+              {!accessReady ? (
+                <div className="los-access-message" role="status" aria-live="polite">
+                  Checking page access…
+                </div>
+              ) : !currentRole || !canViewRoute ? (
+                <section className="los-access-restricted" role="alert">
+                  <h2>Access restricted</h2>
+                  <p>
                     {accessError
                       ? `Role-based access could not be initialized: ${accessError}`
                       : !currentRole
-                      ? 'Your session role does not match an active UI role. Contact an administrator to configure access.'
-                      : 'Your role does not have permission to view this page.'}
-                </p>
-              </section>
-            ) : children}
-          </div>
-        </main>
+                        ? 'Your session role does not match an active UI role. Contact an administrator to configure access.'
+                        : 'Your role does not have permission to view this page.'}
+                  </p>
+                </section>
+              ) : children}
+            </div>
+          </main>
+        </div>
       </div>
     </AccessContext.Provider>
   );

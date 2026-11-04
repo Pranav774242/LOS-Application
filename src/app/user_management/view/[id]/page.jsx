@@ -308,19 +308,19 @@ export default function ViewUserPage() {
               <strong style={{ fontSize: '13px', color: '#173e46' }}>{employee.loginBranch || employee.branch || 'Head Office'}</strong>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #f1f5f4' }}>
+            {/* <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #f1f5f4' }}>
               <span style={{ fontSize: '12px', color: '#6a7e82' }}>Allow MultiBranch</span>
               <strong style={{ fontSize: '13px', color: employee.allowMultiBranch || employee.multiBranchAccess === 'Y' ? '#167c78' : '#6a7e82' }}>
                 {employee.allowMultiBranch || employee.multiBranchAccess === 'Y' ? 'Yes (Access All)' : 'No (Branch Specific)'}
               </strong>
-            </div>
+            </div> */}
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0' }}>
+            {/* <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0' }}>
               <span style={{ fontSize: '12px', color: '#6a7e82' }}>Allow Login On Holidays</span>
               <strong style={{ fontSize: '13px', color: employee.allowLoginOnHolidays || employee.loginOnHolidays === 'Y' ? '#167c78' : '#6a7e82' }}>
                 {employee.allowLoginOnHolidays || employee.loginOnHolidays === 'Y' ? 'Yes' : 'No'}
               </strong>
-            </div>
+            </div> */}
           </div>
         </div>
 

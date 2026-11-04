@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   ChevronLeft,
@@ -14,127 +14,17 @@ import {
   X,
 } from "lucide-react";
 import AppShell from "../../components/AppShell";
+import {
+  createLookupSubType,
+  createLookupType,
+  getLookupOptions,
+  getLookupTypes,
+  setLookupSubTypeActive,
+  setLookupTypeActive,
+} from "../../services/lookups";
 import "./lookup-management.css";
 
-const PAGE_SIZE = 5;
-
-const initialLookups = [
-  {
-    id: 1,
-    code: "LOAN_TYPE",
-    name: "Loan type",
-    status: "Active",
-    description: "Available lending products",
-    subLookups: [
-      {
-        id: 101,
-        code: "HOME_LOAN",
-        name: "Home loan",
-        status: "Active",
-        description: "Residential property financing",
-      },
-      {
-        id: 102,
-        code: "PERSONAL_LOAN",
-        name: "Personal loan",
-        status: "Active",
-        description: "Unsecured personal financing",
-      },
-      {
-        id: 103,
-        code: "AUTO_LOAN",
-        name: "Auto loan",
-        status: "Inactive",
-        description: "Vehicle financing",
-      },
-    ],
-  },
-  {
-    id: 2,
-    code: "EMPLOYMENT",
-    name: "Employment type",
-    status: "Active",
-    description: "Customer employment categories",
-    subLookups: [
-      {
-        id: 201,
-        code: "SALARIED",
-        name: "Salaried",
-        status: "Active",
-        description: "Employed with a regular salary",
-      },
-      {
-        id: 202,
-        code: "SELF_EMPLOYED",
-        name: "Self-employed",
-        status: "Active",
-        description: "Owns or operates a business",
-      },
-    ],
-  },
-  {
-    id: 3,
-    code: "DOCUMENT_TYPE",
-    name: "Document type",
-    status: "Active",
-    description: "Documents collected during application",
-    subLookups: [
-      {
-        id: 301,
-        code: "IDENTITY_PROOF",
-        name: "Identity proof",
-        status: "Active",
-        description: "Government-issued identity document",
-      },
-      {
-        id: 302,
-        code: "ADDRESS_PROOF",
-        name: "Address proof",
-        status: "Active",
-        description: "Current residential address document",
-      },
-    ],
-  },
-  {
-    id: 4,
-    code: "APPLICATION_STAGE",
-    name: "Application stage",
-    status: "Inactive",
-    description: "Loan application processing stages",
-    subLookups: [],
-  },
-  {
-    id: 5,
-    code: "CUSTOMER_TYPE",
-    name: "Customer type",
-    status: "Active",
-    description: "Applicant entity classification",
-    subLookups: [
-      {
-        id: 501,
-        code: "INDIVIDUAL",
-        name: "Individual",
-        status: "Active",
-        description: "Individual applicant",
-      },
-      {
-        id: 502,
-        code: "BUSINESS",
-        name: "Business",
-        status: "Active",
-        description: "Business or organization applicant",
-      },
-    ],
-  },
-  {
-    id: 6,
-    code: "PAYMENT_FREQUENCY",
-    name: "Payment frequency",
-    status: "Active",
-    description: "Repayment schedule frequencies",
-    subLookups: [],
-  },
-];
+const PAGE_SIZE = 10;
 
 const emptyForm = {
   lookupId: "",
@@ -159,7 +49,7 @@ function StatusBadge({ status }) {
 }
 
 export default function LookupManagementPage() {
-  const [lookups, setLookups] = useState(initialLookups);
+  const [lookups, setLookups] = useState([]);
   const [activeTab, setActiveTab] = useState("lookup");
   const [form, setForm] = useState(emptyForm);
   const [editing, setEditing] = useState(null);
@@ -169,6 +59,40 @@ export default function LookupManagementPage() {
   const [page, setPage] = useState(1);
   const [expanded, setExpanded] = useState([]);
   const [toast, setToast] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
+  const [optionsLoading, setOptionsLoading] = useState({});
+  const [optionsErrors, setOptionsErrors] = useState({});
+  const loadedOptionCodes = useRef(new Set());
+  const optionRequests = useRef(new Map());
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setIsLoading(true);
+    setLoadError("");
+
+    getLookupTypes(controller.signal)
+      .then((lookupTypes) => {
+        loadedOptionCodes.current.clear();
+        optionRequests.current.clear();
+        setOptionsLoading({});
+        setOptionsErrors({});
+        setLookups(lookupTypes);
+        setExpanded([]);
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) {
+          setLoadError(error.message || "Unable to load lookups.");
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setIsLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [reloadKey]);
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -284,9 +208,9 @@ export default function LookupManagementPage() {
     return Object.keys(nextErrors).length === 0;
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
-    if (!validateForm()) return;
+    if (isSubmitting || !validateForm()) return;
 
     const values = {
       code: form.code.trim().toUpperCase(),
@@ -294,6 +218,7 @@ export default function LookupManagementPage() {
       status: form.status,
       description: form.description.trim(),
     };
+
     const nextId =
       lookups.reduce(
         (maxId, lookup) =>
@@ -301,82 +226,174 @@ export default function LookupManagementPage() {
         0,
       ) + 1;
 
-    if (activeTab === "lookup") {
-      if (editing?.type === "lookup") {
+    setIsSubmitting(true);
+    try {
+      if (activeTab === "lookup" && !editing) {
+        await createLookupType({
+          code: values.code,
+          name: values.name,
+          status: values.status.toUpperCase(),
+          // isFixed: false,
+          // permissions: ["VIEW", "CREATE", "EDIT", "DELETE"],
+        });
+        setToast("Lookup created successfully.");
+        resetForm();
+        setPage(1);
+        try {
+          const lookupTypes = await getLookupTypes();
+          loadedOptionCodes.current.clear();
+          setLookups(lookupTypes);
+          setExpanded([]);
+        } catch {
+          setToast("Lookup created, but the list could not be refreshed.");
+        }
+        return;
+      }
+
+      if (activeTab === "sub" && !editing) {
+        const parent = lookups.find(
+          (lookup) => String(lookup.id) === form.lookupId,
+        );
+        if (!parent?.code) throw new Error("Select a valid lookup.");
+
+        await createLookupSubType(parent.code, {
+          code: values.code,
+          name: values.name,
+          status: values.status.toUpperCase(),
+        });
+
+        const createdSubLookup = {
+          id: nextId,
+          ...values,
+        };
         setLookups((current) =>
           current.map((lookup) =>
-            lookup.id === editing.id ? { ...lookup, ...values } : lookup,
+            lookup.code === parent.code
+              ? {
+                  ...lookup,
+                  subLookups: [...lookup.subLookups, createdSubLookup],
+                }
+              : lookup,
           ),
         );
-        setToast("Lookup updated successfully.");
-      } else {
-        setLookups((current) => [
-          ...current,
-          { id: nextId, ...values, subLookups: [] },
-        ]);
-        setToast("Lookup created successfully.");
+        setExpanded((current) =>
+          current.includes(parent.id) ? current : [...current, parent.id],
+        );
+        resetForm();
+        setPage(1);
+
+        try {
+          const subLookups = await getLookupOptions(parent.code);
+          loadedOptionCodes.current.add(parent.code);
+          setLookups((current) =>
+            current.map((lookup) =>
+              lookup.code === parent.code ? { ...lookup, subLookups } : lookup,
+            ),
+          );
+          setToast("Sub lookup created successfully.");
+        } catch {
+          setToast("Sub lookup created, but the list could not be refreshed.");
+        }
+        return;
       }
-    } else if (editing?.type === "sub") {
+
+      if (activeTab === "lookup") {
+        if (editing?.type === "lookup") {
+          setLookups((current) =>
+            current.map((lookup) =>
+              lookup.id === editing.id ? { ...lookup, ...values } : lookup,
+            ),
+          );
+          setToast("Lookup updated successfully.");
+        } else {
+          setLookups((current) => [
+            ...current,
+            { id: nextId, ...values, subLookups: [] },
+          ]);
+          setToast("Lookup created successfully.");
+        }
+      } else if (editing?.type === "sub") {
+        setLookups((current) =>
+          current.map((lookup) =>
+            lookup.id === editing.parentId
+              ? {
+                  ...lookup,
+                  subLookups: lookup.subLookups.map((sub) =>
+                    sub.id === editing.id ? { ...sub, ...values } : sub,
+                  ),
+                }
+              : lookup,
+          ),
+        );
+        setToast("Sub lookup updated successfully.");
+      } else {
+        const parentId = Number(form.lookupId);
+        setLookups((current) =>
+          current.map((lookup) =>
+            lookup.id === parentId
+              ? {
+                  ...lookup,
+                  subLookups: [...lookup.subLookups, { id: nextId, ...values }],
+                }
+              : lookup,
+          ),
+        );
+        setExpanded((current) =>
+          current.includes(parentId) ? current : [...current, parentId],
+        );
+        setToast("Sub lookup created successfully.");
+      }
+
+      resetForm();
+      setPage(1);
+    } catch (error) {
+      setToast(error.message || "Unable to create the lookup.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function toggleLookupStatus(lookup) {
+    const nextStatus = lookup.status === "Active" ? "Inactive" : "Active";
+    try {
+      await setLookupTypeActive(lookup, nextStatus === "Active");
       setLookups((current) =>
-        current.map((lookup) =>
-          lookup.id === editing.parentId
-            ? {
-                ...lookup,
-                subLookups: lookup.subLookups.map((sub) =>
-                  sub.id === editing.id ? { ...sub, ...values } : sub,
-                ),
-              }
-            : lookup,
+        current.map((item) =>
+          item.id === lookup.id ? { ...item, status: nextStatus } : item,
         ),
       );
-      setToast("Sub lookup updated successfully.");
-    } else {
-      const parentId = Number(form.lookupId);
+      setToast(`${lookup.name} marked ${nextStatus.toLowerCase()}.`);
+    } catch (error) {
+      setToast(
+        error.message || `Unable to ${nextStatus.toLowerCase()} lookup.`,
+      );
+    }
+  }
+
+  async function toggleSubStatus(parentId, subLookup) {
+    const nextStatus = subLookup.status === "Active" ? "Inactive" : "Active";
+    try {
+      await setLookupSubTypeActive(subLookup.id, nextStatus === "Active");
       setLookups((current) =>
         current.map((lookup) =>
           lookup.id === parentId
             ? {
                 ...lookup,
-                subLookups: [...lookup.subLookups, { id: nextId, ...values }],
+                subLookups: lookup.subLookups.map((sub) =>
+                  sub.id === subLookup.id
+                    ? { ...sub, status: nextStatus }
+                    : sub,
+                ),
               }
             : lookup,
         ),
       );
-      setExpanded((current) =>
-        current.includes(parentId) ? current : [...current, parentId],
+      setToast(`${subLookup.name} marked ${nextStatus.toLowerCase()}.`);
+    } catch (error) {
+      setToast(
+        error.message || `Unable to ${nextStatus.toLowerCase()} sub lookup.`,
       );
-      setToast("Sub lookup created successfully.");
     }
-
-    resetForm();
-    setPage(1);
-  }
-
-  function toggleLookupStatus(lookup) {
-    const nextStatus = lookup.status === "Active" ? "Inactive" : "Active";
-    setLookups((current) =>
-      current.map((item) =>
-        item.id === lookup.id ? { ...item, status: nextStatus } : item,
-      ),
-    );
-    setToast(`${lookup.name} marked ${nextStatus.toLowerCase()}.`);
-  }
-
-  function toggleSubStatus(parentId, subLookup) {
-    const nextStatus = subLookup.status === "Active" ? "Inactive" : "Active";
-    setLookups((current) =>
-      current.map((lookup) =>
-        lookup.id === parentId
-          ? {
-              ...lookup,
-              subLookups: lookup.subLookups.map((sub) =>
-                sub.id === subLookup.id ? { ...sub, status: nextStatus } : sub,
-              ),
-            }
-          : lookup,
-      ),
-    );
-    setToast(`${subLookup.name} marked ${nextStatus.toLowerCase()}.`);
   }
 
   function deleteLookup(lookup) {
@@ -408,12 +425,44 @@ export default function LookupManagementPage() {
     setToast("Sub lookup deleted.");
   }
 
-  function toggleExpanded(id) {
+  async function toggleExpanded(lookup) {
+    const isExpanded = expanded.includes(lookup.id);
     setExpanded((current) =>
-      current.includes(id)
-        ? current.filter((item) => item !== id)
-        : [...current, id],
+      isExpanded
+        ? current.filter((item) => item !== lookup.id)
+        : [...current, lookup.id],
     );
+    if (isExpanded) return;
+    await loadLookupOptions(lookup);
+  }
+
+  async function loadLookupOptions(lookup) {
+    if (loadedOptionCodes.current.has(lookup.code)) return;
+    let request = optionRequests.current.get(lookup.code);
+    if (!request) {
+      setOptionsLoading((current) => ({ ...current, [lookup.code]: true }));
+      setOptionsErrors((current) => ({ ...current, [lookup.code]: "" }));
+      request = getLookupOptions(lookup.code);
+      optionRequests.current.set(lookup.code, request);
+    }
+
+    try {
+      const subLookups = await request;
+      loadedOptionCodes.current.add(lookup.code);
+      setLookups((current) =>
+        current.map((item) =>
+          item.code === lookup.code ? { ...item, subLookups } : item,
+        ),
+      );
+    } catch (error) {
+      setOptionsErrors((current) => ({
+        ...current,
+        [lookup.code]: error.message || "Unable to load sub-lookups.",
+      }));
+    } finally {
+      optionRequests.current.delete(lookup.code);
+      setOptionsLoading((current) => ({ ...current, [lookup.code]: false }));
+    }
   }
 
   function updateField(field, value) {
@@ -527,7 +576,7 @@ export default function LookupManagementPage() {
               <span className="lookup-hint">
                 {isEditing
                   ? "Code cannot be changed after creation."
-                  : "Codes are unique and automatically converted to uppercase."}
+                  : "Codes are unique and should be integers."}
               </span>
             </div>
             <div className="lookup-field">
@@ -581,13 +630,19 @@ export default function LookupManagementPage() {
                   Cancel
                 </button>
               )}
-              <button type="submit" className="lookup-button primary">
+              <button
+                type="submit"
+                className="lookup-button primary"
+                disabled={isSubmitting}
+              >
                 {/* <Plus size={16} /> */}
-                {isEditing
-                  ? "Update"
-                  : isSubTab
-                    ? "Add sub lookup"
-                    : "Create lookup"}
+                {isSubmitting
+                  ? "Creating..."
+                  : isEditing
+                    ? "Update"
+                    : isSubTab
+                      ? "Add sub lookup"
+                      : "Create lookup"}
               </button>
             </div>
           </form>
@@ -600,8 +655,9 @@ export default function LookupManagementPage() {
               <p>Browse and manage lookup masters and their values.</p>
             </div>
             <span className="lookup-count">
-              {filteredLookups.length}{" "}
-              {filteredLookups.length === 1 ? "record" : "records"}
+              {isLoading
+                ? "Loading"
+                : `${filteredLookups.length} ${filteredLookups.length === 1 ? "record" : "records"}`}
             </span>
           </div>
 
@@ -646,33 +702,58 @@ export default function LookupManagementPage() {
                   <th>Name</th>
                   <th>Description</th>
                   <th>Status</th>
-                  <th>Sub lookups</th>
                   <th className="actions-column">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {visibleLookups.map((lookup, index) => {
-                  const isExpanded = expanded.includes(lookup.id);
-                  return (
-                    <LookupRow
-                      key={lookup.id}
-                      lookup={lookup}
-                      rowNumber={startIndex + index + 1}
-                      isExpanded={isExpanded}
-                      onExpand={() => toggleExpanded(lookup.id)}
-                      onEdit={() => startEditLookup(lookup)}
-                      onAddSub={() => startAddSubLookup(lookup)}
-                      onDelete={() => deleteLookup(lookup)}
-                      onToggle={() => toggleLookupStatus(lookup)}
-                      onEditSub={startEditSubLookup}
-                      onDeleteSub={deleteSubLookup}
-                      onToggleSub={toggleSubStatus}
-                    />
-                  );
-                })}
-                {visibleLookups.length === 0 && (
+                {isLoading && (
                   <tr>
-                    <td className="lookup-empty" colSpan="7">
+                    <td className="lookup-empty" colSpan="6">
+                      <strong>Loading lookup types...</strong>
+                    </td>
+                  </tr>
+                )}
+                {!isLoading && loadError && (
+                  <tr>
+                    <td className="lookup-empty" colSpan="6">
+                      <strong>Unable to load lookups</strong>
+                      <span>{loadError}</span>
+                      <button
+                        type="button"
+                        onClick={() => setReloadKey((current) => current + 1)}
+                      >
+                        Retry
+                      </button>
+                    </td>
+                  </tr>
+                )}
+                {!isLoading &&
+                  !loadError &&
+                  visibleLookups.map((lookup, index) => {
+                    const isExpanded = expanded.includes(lookup.id);
+                    return (
+                      <LookupRow
+                        key={lookup.id}
+                        lookup={lookup}
+                        rowNumber={startIndex + index + 1}
+                        isExpanded={isExpanded}
+                        onExpand={() => toggleExpanded(lookup)}
+                        optionsLoading={Boolean(optionsLoading[lookup.code])}
+                        optionsError={optionsErrors[lookup.code]}
+                        onRetryOptions={() => void loadLookupOptions(lookup)}
+                        onEdit={() => startEditLookup(lookup)}
+                        onAddSub={() => startAddSubLookup(lookup)}
+                        onDelete={() => deleteLookup(lookup)}
+                        onToggle={() => toggleLookupStatus(lookup)}
+                        onEditSub={startEditSubLookup}
+                        onDeleteSub={deleteSubLookup}
+                        onToggleSub={toggleSubStatus}
+                      />
+                    );
+                  })}
+                {!isLoading && !loadError && visibleLookups.length === 0 && (
+                  <tr>
+                    <td className="lookup-empty" colSpan="6">
                       <div className="lookup-empty-icon">
                         <Search size={20} />
                       </div>
@@ -772,6 +853,9 @@ function LookupRow({
   onEditSub,
   onDeleteSub,
   onToggleSub,
+  optionsLoading,
+  optionsError,
+  onRetryOptions,
 }) {
   return (
     <>
@@ -797,9 +881,6 @@ function LookupRow({
         <td className="lookup-description-cell">{lookup.description || "—"}</td>
         <td>
           <StatusBadge status={lookup.status} />
-        </td>
-        <td>
-          <span className="lookup-sub-count">{lookup.subLookups.length}</span>
         </td>
         <td>
           <div className="lookup-row-actions">
@@ -845,21 +926,26 @@ function LookupRow({
       </tr>
       {isExpanded && (
         <tr className="lookup-expanded-row">
-          <td colSpan="7">
+          <td colSpan="6">
             <div className="lookup-sub-panel">
               <div className="lookup-sub-heading">
                 <div>
                   <strong>Sub lookups</strong>
-                  <span>
-                    {lookup.subLookups.length}{" "}
-                    {lookup.subLookups.length === 1 ? "value" : "values"}
-                  </span>
                 </div>
                 <button type="button" onClick={onAddSub}>
                   <Plus size={14} /> Add sub lookup
                 </button>
               </div>
-              {lookup.subLookups.length === 0 ? (
+              {optionsLoading ? (
+                <p className="lookup-sub-empty">Loading sub-lookups...</p>
+              ) : optionsError ? (
+                <p className="lookup-sub-empty" role="alert">
+                  {optionsError}{" "}
+                  <button type="button" onClick={onRetryOptions}>
+                    Retry
+                  </button>
+                </p>
+              ) : lookup.subLookups.length === 0 ? (
                 <p className="lookup-sub-empty">
                   No sub lookups have been added to this master yet.
                 </p>
@@ -892,7 +978,6 @@ function LookupRow({
                           onClick={() => onEditSub(lookup, subLookup)}
                         >
                           <Pencil size={14} />
-                          
                         </button>
                         {/* <button
                           type="button"

@@ -230,8 +230,8 @@ export default function DashboardPage() {
       <style jsx>{`
         .dashboard-page {
           min-height: calc(100vh - 68px);
-          margin: -42px -45px -55px;
-          padding: 22px 7% 40px;
+          margin: -32px -36px -48px;
+          padding: 24px;
           background: #f4f7f7;
           color: #173f49;
           font-family: "Google Sans", Arial, sans-serif;
@@ -605,19 +605,20 @@ export default function DashboardPage() {
           color: #95611b;
         }
 
-        @media (max-width: 900px) {
+        @media (max-width: 1100px) {
           .dashboard-page {
-            margin-right: -24px;
-            margin-left: -24px;
-            padding-right: 6%;
-            padding-left: 6%;
+            margin-top: -32px;
+            margin-bottom: -48px;
+            margin-right: -26px;
+            margin-left: -26px;
+            padding: 24px;
           }
         }
 
         @media (max-width: 680px) {
           .dashboard-page {
-            margin: -24px -16px -35px;
-            padding: 18px 14px 30px;
+            margin: -23px -15px -34px;
+            padding: 16px;
           }
 
           .dashboard-heading {

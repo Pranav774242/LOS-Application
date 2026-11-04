@@ -90,6 +90,7 @@ export default function UserForm({ mode = 'add', initialData = null }) {
 
     userName: initialData?.userName || '',
     password: '',
+    confirmPassword: '',
     email: initialData?.email || '',
     allow2FA: initialData?.allow2FA ?? (initialData?.twoFAEnabled === 'Y'),
 
@@ -101,7 +102,7 @@ export default function UserForm({ mode = 'add', initialData = null }) {
     loginBranch: initialData?.loginBranch || initialData?.branch || '',
     allowLoginOnHolidays: initialData?.allowLoginOnHolidays ?? (initialData?.loginOnHolidays === 'Y'),
 
-    idleTimeout: initialData?.idleTimeout ?? 900,
+    sessionTimeout: initialData?.sessionTimeout ?? initialData?.idleTimeout ?? initialData?.inactiveSessionTimeout ?? 900,
     badLogins: initialData?.badLogins ?? 3,
     loginTime: initialData?.loginTime || '09:00 AM',
     logoutTime: initialData?.logoutTime || '06:00 PM',
@@ -237,6 +238,14 @@ export default function UserForm({ mode = 'add', initialData = null }) {
         }
         break;
 
+      case 'confirmPassword':
+        if (!isEdit && !value) {
+          err = 'Confirm Password is required.';
+        } else if (!isEdit && value !== values.password) {
+          err = 'Passwords do not match.';
+        }
+        break;
+
       case 'email':
         if (!value || !String(value).trim()) {
           err = 'Email ID is required.';
@@ -273,15 +282,15 @@ export default function UserForm({ mode = 'add', initialData = null }) {
 
       case 'loginBranch':
         if (!values.allowMultiBranch && (!value || !['Pune', 'Mumbai', 'Koramangala', 'Salt Lake', 'Andheri West', 'Pimpri', 'Indiranagar', 'Head Office'].includes(value))) {
-          err = 'Please select a Login Branch (or enable Allow MultiBranch).';
+          err = 'Please select a Login Branch.';
         }
         break;
 
-      case 'idleTimeout':
+      case 'sessionTimeout':
         if (value === '' || value === null || value === undefined) {
-          err = 'Idle Timeout is required.';
+          err = 'Session Timeout is required.';
         } else if (!/^\d+$/.test(String(value)) || Number(value) < 60 || Number(value) > 86400) {
-          err = 'Idle Timeout must be between 60 and 86,400 seconds (1 minute to 24 hours).';
+          err = 'Session Timeout must be between 60 and 86,400 seconds (1 minute to 24 hours).';
         }
         break;
 
@@ -341,12 +350,26 @@ export default function UserForm({ mode = 'add', initialData = null }) {
       return;
     }
 
-    if (hasSubmitted || touched[name] || name === 'password') {
+    if (hasSubmitted || touched[name] || name === 'password' || name === 'confirmPassword') {
       setErrors((prev) => {
         const nextErrors = { ...prev };
         const error = validateField(name, val, nextForm);
         if (error) nextErrors[name] = error;
         else delete nextErrors[name];
+
+        if (
+          name === 'password'
+          && !isEdit
+          && (hasSubmitted || touched.confirmPassword || nextForm.confirmPassword)
+        ) {
+          const confirmPasswordError = validateField(
+            'confirmPassword',
+            nextForm.confirmPassword,
+            nextForm,
+          );
+          if (confirmPasswordError) nextErrors.confirmPassword = confirmPasswordError;
+          else delete nextErrors.confirmPassword;
+        }
 
         if (name === 'userName' && (hasSubmitted || touched.password)) {
           const passwordError = validateField('password', nextForm.password, nextForm);
@@ -387,6 +410,16 @@ export default function UserForm({ mode = 'add', initialData = null }) {
         const passwordError = validateField('password', nextForm.password, nextForm);
         if (passwordError) nextErrors.password = passwordError;
         else delete nextErrors.password;
+      }
+
+      if (name === 'password' && !isEdit && (hasSubmitted || touched.confirmPassword)) {
+        const confirmPasswordError = validateField(
+          'confirmPassword',
+          nextForm.confirmPassword,
+          nextForm,
+        );
+        if (confirmPasswordError) nextErrors.confirmPassword = confirmPasswordError;
+        else delete nextErrors.confirmPassword;
       }
 
       return nextErrors;
@@ -447,12 +480,15 @@ export default function UserForm({ mode = 'add', initialData = null }) {
       'userRole',
       'systemRole',
       'status',
-      'idleTimeout',
+      'sessionTimeout',
       'badLogins',
     ];
 
     if (!isEdit || form.password) {
       fieldsToValidate.push('password');
+    }
+    if (!isEdit) {
+      fieldsToValidate.push('confirmPassword');
     }
 
     if (!form.allowMultiBranch) {
@@ -531,8 +567,9 @@ export default function UserForm({ mode = 'add', initialData = null }) {
       allowLoginOnHolidays: form.allowLoginOnHolidays,
       loginOnHolidays: form.allowLoginOnHolidays ? 'Y' : 'N',
 
-      idleTimeout: Number(form.idleTimeout),
-      inactiveSessionTimeout: String(form.idleTimeout),
+      sessionTimeout: Number(form.sessionTimeout),
+      idleTimeout: Number(form.sessionTimeout),
+      inactiveSessionTimeout: String(form.sessionTimeout),
       badLogins: Number(form.badLogins),
       loginTime: form.loginTime,
       logoutTime: form.logoutTime,
@@ -570,13 +607,20 @@ export default function UserForm({ mode = 'add', initialData = null }) {
           loginOnHolidays: employeeRecord.allowLoginOnHolidays,
           loginTime: toApiTime(employeeRecord.loginTime),
           logoutTime: toApiTime(employeeRecord.logoutTime),
-          inactiveSessionTimeout: employeeRecord.idleTimeout,
+          inactiveSessionTimeout: employeeRecord.sessionTimeout,
         };
 
         await createUser(userPayload);
       }
 
       saveEmployee(employeeRecord);
+      if (!isEdit) {
+        setForm((currentForm) => ({
+          ...currentForm,
+          password: '',
+          confirmPassword: '',
+        }));
+      }
 
       if (typeof window !== 'undefined') {
         window.sessionStorage.setItem(
@@ -601,13 +645,13 @@ export default function UserForm({ mode = 'add', initialData = null }) {
   return (
     <div>
       <PageHeader
-        eyebrow="ADMINISTRATION"
+        //eyebrow="ADMINISTRATION"
         title={isEdit ? 'Edit Employee' : 'Add User'}
-        description={
-          isEdit
-            ? `Modify account settings, access privileges, and operating parameters for ${initialData?.name || initialData?.fullName || 'employee'}.`
-            : 'Register a new employee and configure application access, security credentials, and branch permissions.'
-        }
+        // description={
+        //   isEdit
+        //     ? `Modify account settings, access privileges, and operating parameters for ${initialData?.name || initialData?.fullName || 'employee'}.`
+        //     : 'Register a new employee and configure application access, security credentials, and branch permissions.'
+        // }
         action={
           <button
             type="button"
@@ -830,7 +874,7 @@ export default function UserForm({ mode = 'add', initialData = null }) {
             <span>Login Information</span>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '18px' }}>
+          <div className={`login-information-grid${isEdit ? ' edit' : ''}`}>
             <div>
               <label className="form-label" htmlFor="field-userName">
                 User Name <span>*</span>
@@ -905,6 +949,37 @@ export default function UserForm({ mode = 'add', initialData = null }) {
                 </span>
               )}
             </div>
+
+            {!isEdit && (
+              <div>
+                <label className="form-label" htmlFor="field-confirmPassword">
+                  Confirm Password <span>*</span>
+                </label>
+                <input
+                  id="field-confirmPassword"
+                  name="confirmPassword"
+                  type="password"
+                  maxLength={128}
+                  autoComplete="new-password"
+                  aria-invalid={Boolean(errors.confirmPassword)}
+                  aria-describedby={errors.confirmPassword ? 'field-confirmPassword-error' : undefined}
+                  className={`form-input ${errors.confirmPassword ? 'has-error' : ''}`}
+                  value={form.confirmPassword}
+                  onChange={handleChange}
+                  onBlur={handleBlur}
+                  placeholder="Re-enter password"
+                />
+                {errors.confirmPassword ? (
+                  <span id="field-confirmPassword-error" className="field-error-text">
+                    {errors.confirmPassword}
+                  </span>
+                ) : (
+                  <span style={{ fontSize: '11px', color: '#647e82', marginTop: '4px', display: 'block' }}>
+                    Enter the same password again.
+                  </span>
+                )}
+              </div>
+            )}
 
             <div>
               <label className="form-label" htmlFor="field-email">
@@ -997,12 +1072,10 @@ export default function UserForm({ mode = 'add', initialData = null }) {
                 onBlur={handleBlur}
               >
                 <option value="">Select User Role</option>
-                <option value="Manager">Manager</option>
-                <option value="Officer">Officer</option>
-                <option value="Maker">Maker</option>
-                <option value="Checker">Checker</option>
-                <option value="Viewer">Viewer</option>
-                <option value="Admin">Admin</option>
+                <option value="Super Admin">Super Admin User</option>
+                <option value="Bank Admin">Bank Admin User</option>
+                <option value="Branch User">Branch User</option>
+                
               </select>
               {errors.userRole && <span className="field-error-text">{errors.userRole}</span>}
             </div>
@@ -1021,10 +1094,9 @@ export default function UserForm({ mode = 'add', initialData = null }) {
               >
                 <option value="">Select System Role</option>
                 <option value="SUPER_ADMIN">SUPER_ADMIN</option>
-                <option value="BRANCH_USER">BRANCH_USER</option>
-                <option value="CREDIT_USER">CREDIT_USER</option>
-                <option value="OPERATIONS_USER">OPERATIONS_USER</option>
-                <option value="AUDIT_USER">AUDIT_USER</option>
+                <option value="Maker">Maker</option>
+                <option value="Checker">Checker</option>
+                <option value="Viewer">Viewer</option>
               </select>
               {errors.systemRole && <span className="field-error-text">{errors.systemRole}</span>}
             </div>
@@ -1084,7 +1156,7 @@ export default function UserForm({ mode = 'add', initialData = null }) {
           </div>
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '28px', marginTop: '20px' }}>
-            <div>
+            {/* <div>
               <label className="form-switch">
                 <input
                   type="checkbox"
@@ -1097,9 +1169,9 @@ export default function UserForm({ mode = 'add', initialData = null }) {
               <p style={{ margin: '4px 0 0 28px', fontSize: '11px', color: '#7a8e91' }}>
                 Grants operational access across all bank branches.
               </p>
-            </div>
+            </div> */}
 
-            <div>
+            {/* <div>
               <label className="form-switch">
                 <input
                   type="checkbox"
@@ -1112,7 +1184,7 @@ export default function UserForm({ mode = 'add', initialData = null }) {
               <p style={{ margin: '4px 0 0 28px', fontSize: '11px', color: '#7a8e91' }}>
                 Permits system access on recognized public holidays and weekends.
               </p>
-            </div>
+            </div> */}
           </div>
         </div>
 
@@ -1126,32 +1198,39 @@ export default function UserForm({ mode = 'add', initialData = null }) {
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '18px' }}>
-            {/* <div>
-              <label className="form-label" htmlFor="field-idleTimeout">
-                Idle Timeout In (Secs) <span>*</span>
-              </label>
-              <input
-                id="field-idleTimeout"
-                name="idleTimeout"
-                type="text"
-                inputMode="numeric"
-                min={60}
-                max={86400}
-                maxLength={5}
-                aria-invalid={Boolean(errors.idleTimeout)}
-                className={`form-input ${errors.idleTimeout ? 'has-error' : ''}`}
-                value={form.idleTimeout}
-                onChange={handleChange}
-                onBlur={handleBlur}
-              />
-              {errors.idleTimeout ? (
-                <span className="field-error-text">{errors.idleTimeout}</span>
-              ) : (
-                <span style={{ fontSize: '11px', color: '#647e82', marginTop: '4px', display: 'block' }}>
-                  Duration of inactivity before session auto-expires (60 - 86,400s).
-                </span>
-              )}
-            </div> */}
+            <div>
+                <label className="form-label" htmlFor="field-sessionTimeout">
+                  Session Timeout (in sec) <span>*</span>
+                </label>
+                <input
+                  id="field-sessionTimeout"
+                  name="sessionTimeout"
+                  type="text"
+                  inputMode="numeric"
+                  min={60}
+                  max={86400}
+                  maxLength={5}
+                  aria-invalid={Boolean(errors.sessionTimeout)}
+                  className={`form-input ${errors.sessionTimeout ? 'has-error' : ''}`}
+                  value={form.sessionTimeout ?? ''}
+                  onChange={handleChange}
+                  onBlur={handleBlur}
+                />
+                {errors.sessionTimeout ? (
+                  <span className="field-error-text">{errors.sessionTimeout}</span>
+                ) : (
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      color: '#647e82',
+                      marginTop: '4px',
+                      display: 'block',
+                    }}
+                  >
+                    Duration before the login session expires (60 - 86,400 seconds).
+                  </span>
+                )}
+              </div>
 
             {/* <div>
               <label className="form-label" htmlFor="field-badLogins">

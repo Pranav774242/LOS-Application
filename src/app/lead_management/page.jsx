@@ -1,10 +1,13 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Download, Eye, FileSpreadsheet, Pencil, Plus, Search, Upload, UserRound, X } from 'lucide-react';
+import Calendar from 'react-calendar';
 import AppShell from '../../components/AppShell';
 import { PermissionGate } from '../../components/AccessControl';
+import LeadDatePicker from '../../components/LeadDatePicker';
 import PageHeader from '../../components/PageHeader';
 import NewLead from '../../components/NewLead';
+import CorporateLeadWizard from '../../components/CorporateLeadWizard';
 import LeadDetails from '../../components/LeadDetails';
 import { saveLeads } from '../../services/leadService';
 import { assignLead, exportAllLeads, getAllLeads, getLeadById, importLeadsCsv, updateLead } from '../../services/lead_management';
@@ -49,7 +52,7 @@ const statusKeys = {
   CONVERTED: 'qualified',
 };
 
-const LEADS_PER_PAGE = 5;
+const LEADS_PER_PAGE = 10;
 
 const getUserRows = (result) => [
   result?.data?.users,
@@ -79,6 +82,14 @@ const toIsoDate = (date) => {
   const [day, month, year] = value.split('-');
   return year && month && day ? `${year}-${month}-${day}` : '';
 };
+
+const dateFromIso = (value) => value ? new Date(`${value}T00:00:00`) : null;
+const dateToIso = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+const formatFilterDate = (value) => dateFromIso(value)?.toLocaleDateString('en-IN', {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+}) || 'Select date';
 
 const csvCell = (value) => {
   const text = value === null || value === undefined
@@ -110,13 +121,18 @@ const downloadBlob = (blob, filename) => {
 };
 
 const normalizeLeadRecord = (lead) => {
-  const nameParts = String(lead.customerName || lead.name || '').trim().split(/\s+/).filter(Boolean);
+  const nameParts = String(lead.entityName || lead.organizationName || lead.customerName || lead.name || '').trim().split(/\s+/).filter(Boolean);
   const apiDate = lead.date || lead.leadDate || lead.createdAt || '';
   const dateMatch = String(apiDate).match(/^(\d{4})-(\d{2})-(\d{2})/);
 
   return {
     ...lead,
     id: lead.leadId || lead.id || lead._id || '',
+    entityName: lead.entityName || lead.organizationName || lead.legalName
+      || (String(lead.leadType || lead.customerType || '').toLowerCase().includes('corporate')
+        ? lead.customerName || lead.name || ''
+        : ''),
+    registrationNo: lead.registrationNo || lead.registrationNumber || lead.cin || lead.llpin || '',
     firstName: lead.firstName || nameParts[0] || '',
     lastName: lead.lastName || (nameParts.length > 1 ? nameParts[nameParts.length - 1] : ''),
     mobileNumber: lead.mobileNumber || lead.mobile || lead.phoneNumber || '',
@@ -138,7 +154,7 @@ const normalizeLeadRecord = (lead) => {
     assignedBy: lead.assignedBy || lead.createdBy || '',
     assignedToName: lead.assignedToName || lead.assignedCheckerName || lead.assignedViewerName || '',
     date: dateMatch ? `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}` : apiDate,
-    name: lead.customerName || lead.name || nameParts.join(' '),
+    name: lead.entityName || lead.organizationName || lead.legalName || lead.customerName || lead.name || nameParts.join(' '),
     status: lead.leadStatus || lead.status || 'New',
     statusKey: statusKeys[lead.leadStatus || lead.status] || 'new',
     product: lead.loanProductType || lead.product || '',
@@ -156,13 +172,16 @@ const leadManagementStyles = `
 .lm-heading-copy p{margin:0;color:#748587;font-size:12px;line-height:1.5}
 .lm-add-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:0 15px;border:1px solid #177e7a;border-radius:5px;background:#177e7a;color:#fff;font-size:12px;font-weight:700;white-space:nowrap;cursor:pointer}
 .lm-add-button:hover{border-color:#0c6662;background:#0c6662}
-.lm-toolbar{display:grid;grid-template-columns:minmax(250px,1.5fr) minmax(155px,.75fr) repeat(2,minmax(145px,.7fr)) auto;align-items:end;gap:12px;margin-bottom:14px;padding:14px;border:1px solid #dfe8e6;border-radius:6px;background:#f8faf9}
+.lm-toolbar{display:grid;grid-template-columns:minmax(125px,.75fr) repeat(3,minmax(145px,1fr)) auto;align-items:end;gap:12px;margin-bottom:14px;padding:14px;border:1px solid #dfe8e6;border-radius:6px;background:#f8faf9}
 .lm-filter{display:grid;gap:6px;min-width:0;color:#52696b;font-size:10px;font-weight:700}
 .lm-search-box{display:flex;align-items:center;gap:8px;min-width:0;height:39px;padding:0 10px;border:1px solid #cbd9d7;border-radius:5px;background:#fff;color:#78898a}
 .lm-search-box:focus-within{border-color:#568e88;box-shadow:0 0 0 3px rgba(23,126,122,.1)}
 .lm-search-box input{width:100%;min-width:0;height:100%;border:0;outline:0;background:transparent;color:#203c42;font:inherit;font-size:12px}
-.lm-filter select,.lm-filter input{width:100%;min-width:0;height:39px;padding:0 10px;border:1px solid #cbd9d7;border-radius:5px;background:#fff;color:#30494b;font:inherit;font-size:12px;outline:none}
-.lm-filter select:focus,.lm-filter input:focus{border-color:#568e88;box-shadow:0 0 0 3px rgba(23,126,122,.1)}
+.lm-filter select,.lm-filter>input{width:100%;min-width:0;height:39px;padding:0 10px;border:1px solid #cbd9d7;border-radius:5px;background:#fff;color:#30494b;font:inherit;font-size:12px;outline:none}
+.lm-filter select:focus,.lm-filter>input:focus{border-color:#568e88;box-shadow:0 0 0 3px rgba(23,126,122,.1)}
+.lm-date-picker .dob-picker-trigger{width:100%;height:39px;padding:0 10px;border:1px solid #cbd9d7;border-radius:5px;background:#fff;color:#30494b;font:inherit;font-size:12px;font-weight:400;outline:none}
+.lm-date-picker .dob-picker-trigger:focus{border-color:#568e88;box-shadow:0 0 0 3px rgba(23,126,122,.1)}
+.lm-filter-date-to .dob-calendar-popover{left:auto;right:8px}
 .lm-reset{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:39px;padding:0 11px;border:1px solid #cfddda;border-radius:5px;background:#fff;color:#536a6c;font-size:11px;font-weight:700;white-space:nowrap;cursor:pointer}
 .lm-reset:hover{background:#eff6f4}
 .lm-results{overflow:hidden;border:1px solid #dfe8e6;border-radius:6px;background:#fff}
@@ -245,12 +264,13 @@ const leadManagementStyles = `
 @media(max-width:540px){.lm-page{padding-top:0}.lm-page-header.page-header{align-items:flex-start;flex-direction:column;gap:12px}.lm-heading-actions{width:100%}.lm-heading-actions button{flex:1}.lm-toolbar{grid-template-columns:1fr;padding:12px}.lm-filter-search{grid-column:auto}.lm-reset{width:100%}.lm-results-meta{align-items:flex-start;flex-direction:column}.lm-pagination{align-items:flex-start;flex-direction:column}}
 `;
 
-export default function LeadManagementPage() {
+export function LeadManagementPage({ corporate = false }) {
   const [leads, setLeads] = useState([]);
   const [isLoadingLeads, setIsLoadingLeads] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
   const [showNewLead, setShowNewLead] = useState(false);
+  const [editingCorporateLead, setEditingCorporateLead] = useState(null);
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [bulkFile, setBulkFile] = useState(null);
   const [isImporting, setIsImporting] = useState(false);
@@ -279,7 +299,26 @@ export default function LeadManagementPage() {
   const [statusFilter, setStatusFilter] = useState('All');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const [openDatePicker, setOpenDatePicker] = useState(null);
+  const fromDatePickerRef = useRef(null);
+  const toDatePickerRef = useRef(null);
   const [currentPage, setCurrentPage] = useState(1);
+
+  useEffect(() => {
+    if (!openDatePicker) return undefined;
+
+    const handleOutsidePointerDown = (event) => {
+      if (
+        !fromDatePickerRef.current?.contains(event.target)
+        && !toDatePickerRef.current?.contains(event.target)
+      ) {
+        setOpenDatePicker(null);
+      }
+    };
+
+    document.addEventListener('pointerdown', handleOutsidePointerDown);
+    return () => document.removeEventListener('pointerdown', handleOutsidePointerDown);
+  }, [openDatePicker]);
 
   useEffect(() => {
     let isActive = true;
@@ -329,6 +368,27 @@ export default function LeadManagementPage() {
         remarks: '',
       }, ...current];
     });
+  };
+
+  const handleCorporateSaved = (form, response) => {
+    const responseLead = response?.data?.lead || response?.data || response;
+    const leadId = responseLead?.leadId || responseLead?.id || responseLead?._id || form.id;
+    if (!leadId) {
+      setReloadKey((key) => key + 1);
+      setEditingCorporateLead(null);
+      return;
+    }
+    const savedLead = normalizeLeadRecord({
+      ...form,
+      ...(responseLead && typeof responseLead === 'object' ? responseLead : {}),
+      id: leadId,
+      leadId,
+      leadType: 'CORPORATE',
+      customerName: form.entityName,
+      name: form.entityName,
+    });
+    setLeads((current) => [savedLead, ...current.filter((lead) => lead.id !== savedLead.id)]);
+    setEditingCorporateLead(null);
   };
 
   const handleUpdateLead = async (form, updates) => {
@@ -432,12 +492,20 @@ export default function LeadManagementPage() {
     setIsExporting(true);
     try {
       if (mode === 'all') {
-        const csvBlob = await exportAllLeads();
-        downloadBlob(csvBlob, 'leads.csv');
+        if (corporate) {
+          if (isLoadingLeads) throw new Error('Wait for the corporate leads to finish loading, then try again.');
+          if (loadError) throw new Error('Corporate leads could not be loaded. Retry loading leads before exporting.');
+          if (!activeLeads.length) throw new Error('There are no corporate leads to export.');
+          const csv = `\uFEFF${leadsToCsv(activeLeads)}`;
+          downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), 'corporate-leads.csv');
+        } else {
+          const csvBlob = await exportAllLeads();
+          downloadBlob(csvBlob, 'leads.csv');
+        }
       } else {
         if (isLoadingLeads) throw new Error('Wait for the leads to finish loading, then try again.');
         if (loadError) throw new Error('Leads could not be loaded. Retry loading leads before exporting a date range.');
-        const matchingLeads = leads.filter((lead) => {
+        const matchingLeads = activeLeads.filter((lead) => {
           const leadDate = toIsoDate(lead.date || lead.leadDate || lead.createdAt);
           return leadDate && leadDate >= exportFromDate && leadDate <= exportToDate;
         });
@@ -551,15 +619,19 @@ export default function LeadManagementPage() {
     setStatusFilter('All');
     setFromDate('');
     setToDate('');
+    setOpenDatePicker(null);
   };
 
-  const filteredLeads = leads.filter((lead) => {
+  const activeLeads = corporate ? leads.filter((lead) => isCorporateLead(lead)) : leads;
+  const filteredLeads = activeLeads.filter((lead) => {
     const leadStatus = lead.status === 'Pending' ? 'New' : lead.status || 'New';
     const statusMatches = statusFilter === 'All' || leadStatus === statusFilter;
     const leadDate = toIsoDate(leadFieldValue(lead, 'date'));
     const fromMatches = !fromDate || Boolean(leadDate && leadDate >= fromDate);
     const toMatches = !toDate || Boolean(leadDate && leadDate <= toDate);
-    const fieldValues = ['id', 'firstName', 'lastName', 'mobileNumber', 'assignedBy', 'assignedToName'].map((field) => leadFieldValue(lead, field));
+    const fieldValues = (corporate
+      ? ['id', 'entityName', 'registrationNo', 'assignedBy', 'assignedToName']
+      : ['id', 'firstName', 'lastName', 'mobileNumber', 'assignedBy', 'assignedToName']).map((field) => leadFieldValue(lead, field));
     const searchMatches = !searchQuery || fieldValues.some((value) => String(value ?? '').toLowerCase().includes(searchQuery));
     return statusMatches && fromMatches && toMatches && searchMatches;
   });
@@ -568,6 +640,9 @@ export default function LeadManagementPage() {
   const pageStart = filteredLeads.length ? (visiblePage - 1) * LEADS_PER_PAGE : 0;
   const paginatedLeads = filteredLeads.slice(pageStart, pageStart + LEADS_PER_PAGE);
   const pageEnd = Math.min(pageStart + LEADS_PER_PAGE, filteredLeads.length);
+  const tableColumns = corporate
+    ? [['srNo', 'Sr. No.'], ['id', 'Lead ID'], ['entityName', 'Entity Name'], ['registrationNo', 'Registration No.'], ['assignedToName', 'Assigned To'], ['status', 'Status'], ['date', 'Lead Date']]
+    : leadTableColumns;
   return (
     <>
       <AppShell title="Lead Management">
@@ -575,8 +650,10 @@ export default function LeadManagementPage() {
         <main className="lm-page">
           <PageHeader
             className="lm-page-header"
-            title="Lead Management"
-            description="Set effective-dated interest tiers by loan product and tenure."
+            title={corporate ? 'Corporate Lead Management' : 'Retail Lead Management'}
+            description={corporate
+              ? 'Manage corporate enquiries, qualification status, ownership, and lead dates.'
+              : 'Manage retail enquiries, qualification status, ownership, and lead dates.'}
             marquee
             action={
               <div className="lm-heading-actions">
@@ -585,7 +662,7 @@ export default function LeadManagementPage() {
                   setExportError('');
                   setShowExportDialog(true);
                 }}><Download size={16} /> Export Lead</button>
-                <button type="button" className="lm-add-button" onClick={() => setShowNewLead(true)}><Plus size={16} /> Add New Lead</button>
+                <button type="button" className="lm-add-button" onClick={() => corporate ? setEditingCorporateLead({}) : setShowNewLead(true)}><Plus size={16} /> Add New Lead</button>
                 <button type="button" className="lm-export-button" onClick={openBulkImport}><Upload size={16} /> Upload Bulk Lead</button>
               </div>
             }
@@ -601,37 +678,96 @@ export default function LeadManagementPage() {
                 {['New', 'In Progress', 'Contacted', 'Qualified', 'On Hold', 'Rejected', 'Converted'].map((status) => <option key={status} value={status}>{status}</option>)}
               </select>
             </label>
-            <label className="lm-filter" htmlFor="lead-from-date">Lead date from<input id="lead-from-date" type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} /></label>
-            <label className="lm-filter" htmlFor="lead-to-date">Lead date to<input id="lead-to-date" type="date" min={fromDate || undefined} value={toDate} onChange={(event) => setToDate(event.target.value)} /></label>
+            <label className="lm-filter" htmlFor="lead-from-date">Lead date from
+              <div ref={fromDatePickerRef} className="lm-date-picker" style={{ position: 'relative' }}>
+                <button
+                  id="lead-from-date"
+                  type="button"
+                  className="dob-picker-trigger"
+                  aria-haspopup="dialog"
+                  aria-expanded={openDatePicker === 'from'}
+                  onClick={() => setOpenDatePicker((open) => open === 'from' ? null : 'from')}
+                >
+                  <span className={fromDate ? '' : 'dob-picker-placeholder'}>{formatFilterDate(fromDate)}</span>
+                  <CalendarDays size={16} aria-hidden="true" />
+                </button>
+                {openDatePicker === 'from' ? (
+                  <div className="dob-calendar-popover" role="dialog" aria-label="Choose lead start date">
+                    <Calendar
+                      className="loan-birth-calendar"
+                      value={dateFromIso(fromDate)}
+                      onChange={(date) => {
+                        setFromDate(dateToIso(date));
+                        setOpenDatePicker(null);
+                      }}
+                      defaultActiveStartDate={dateFromIso(fromDate) || new Date()}
+                      locale="en-IN"
+                    />
+                  </div>
+                ) : null}
+              </div>
+            </label>
+            <label className="lm-filter lm-filter-date-to" htmlFor="lead-to-date">Lead date to
+              <div ref={toDatePickerRef} className="lm-date-picker" style={{ position: 'relative' }}>
+                <button
+                  id="lead-to-date"
+                  type="button"
+                  className="dob-picker-trigger"
+                  aria-haspopup="dialog"
+                  aria-expanded={openDatePicker === 'to'}
+                  onClick={() => setOpenDatePicker((open) => open === 'to' ? null : 'to')}
+                >
+                  <span className={toDate ? '' : 'dob-picker-placeholder'}>{formatFilterDate(toDate)}</span>
+                  <CalendarDays size={16} aria-hidden="true" />
+                </button>
+                {openDatePicker === 'to' ? (
+                  <div className="dob-calendar-popover" role="dialog" aria-label="Choose lead end date">
+                    <Calendar
+                      className="loan-birth-calendar"
+                      value={dateFromIso(toDate)}
+                      minDate={dateFromIso(fromDate) || undefined}
+                      onChange={(date) => {
+                        setToDate(dateToIso(date));
+                        setOpenDatePicker(null);
+                      }}
+                      defaultActiveStartDate={dateFromIso(toDate) || dateFromIso(fromDate) || new Date()}
+                      locale="en-IN"
+                    />
+                  </div>
+                ) : null}
+              </div>
+            </label>
             {(searchInput || statusFilter !== 'All' || fromDate || toDate) && <button type="button" className="lm-reset" onClick={clearFilters}><X size={14} /> Clear filters</button>}
           </section>
 
           {loadError ? <div className="lm-load-error" role="alert"><span>{loadError}</span><button type="button" onClick={() => setReloadKey((key) => key + 1)}>Retry</button></div> : null}
 
           <section className="lm-results" aria-label="Lead records">
-            <div className="lm-results-meta"><strong>{filteredLeads.length} {filteredLeads.length === 1 ? 'lead' : 'leads'}</strong><span>Search covers lead ID, first and last name, mobile number, and assignee.</span></div>
+            <div className="lm-results-meta"><strong>{filteredLeads.length} {filteredLeads.length === 1 ? 'lead' : 'leads'}</strong><span>{corporate ? 'Search covers lead ID, entity name, registration number, and assignee.' : 'Search covers lead ID, first and last name, mobile number, and assignee.'}</span></div>
             <div className="lm-table-wrap">
               <table className="lm-table">
-                <thead><tr>{leadTableColumns.map(([, label]) => <th key={label}>{label}</th>)}<th>Actions</th></tr></thead>
+                <thead><tr>{tableColumns.map(([, label]) => <th key={label}>{label}</th>)}<th>Actions</th></tr></thead>
                 <tbody>
-                  {isLoadingLeads ? <tr><td className="lm-empty" colSpan={leadTableColumns.length + 1}>Loading leads...</td></tr>
-                  : loadError ? <tr><td className="lm-empty" colSpan={leadTableColumns.length + 1}>Unable to load leads. Retry the request above.</td></tr>
-                  : paginatedLeads.length ? paginatedLeads.map((lead) => (
+                  {isLoadingLeads ? <tr><td className="lm-empty" colSpan={tableColumns.length + 1}>Loading leads...</td></tr>
+                  : loadError ? <tr><td className="lm-empty" colSpan={tableColumns.length + 1}>Unable to load leads. Retry the request above.</td></tr>
+                  : paginatedLeads.length ? paginatedLeads.map((lead, rowIndex) => (
                     <tr key={lead.id}>
-                      {leadTableColumns.map(([field]) => (
+                      {tableColumns.map(([field]) => (
                         <td key={field} className={field === 'id' ? 'lm-id' : undefined}>
-                          {field === 'status'
+                          {field === 'srNo'
+                            ? pageStart + rowIndex + 1
+                            : field === 'status'
                             ? <span className={`lm-status status-${lead.statusKey || statusKeys[lead.status] || 'new'}`}>{lead.status === 'Pending' ? 'New' : lead.status || 'New'}</span>
                             : String(leadFieldValue(lead, field) ?? '—')}
                         </td>
                       ))}
                       <td><div className="lm-actions">
                         <button type="button" className="lm-action" onClick={() => loadLeadDetails(lead).catch(() => {})} aria-label={`View lead ${lead.id}`} title="View lead"><Eye size={14} /></button>
-                        <button type="button" className="lm-action" onClick={() => openLeadEditor(lead)} aria-label={`Edit lead ${lead.id}`} title="Edit lead"><Pencil size={14} /></button>
+                        <button type="button" className="lm-action" onClick={() => corporate ? setEditingCorporateLead(lead) : openLeadEditor(lead)} aria-label={`Edit lead ${lead.id}`} title="Edit lead"><Pencil size={14} /></button>
                       <button type="button" className="lm-action" onClick={() => openAssignmentDialog(lead)} aria-label={`Assign lead ${lead.id}`} title="Assign lead">Assigned</button>
                       </div></td>
                     </tr>
-                  )) : <tr><td className="lm-empty" colSpan={leadTableColumns.length + 1}>No leads match these filters.</td></tr>}
+                  )) : <tr><td className="lm-empty" colSpan={tableColumns.length + 1}>No leads match these filters.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -649,7 +785,7 @@ export default function LeadManagementPage() {
 
       <NewLead
         key={editingLead?.id || 'new-lead'}
-        open={showNewLead || Boolean(editingLead)}
+        open={!corporate && (showNewLead || Boolean(editingLead))}
         initialData={editingLead}
         onClose={() => {
           setShowNewLead(false);
@@ -658,6 +794,14 @@ export default function LeadManagementPage() {
         onCreate={handleCreateLead}
         onUpdate={handleUpdateLead}
       />
+      {corporate ? (
+        <CorporateLeadWizard
+          open={Boolean(editingCorporateLead)}
+          initialData={editingCorporateLead}
+          onClose={() => setEditingCorporateLead(null)}
+          onSaved={handleCorporateSaved}
+        />
+      ) : null}
       <LeadDetails
         lead={selectedLead}
         open={Boolean(selectedLead)}
@@ -665,7 +809,11 @@ export default function LeadManagementPage() {
         error={leadDetailsError}
         onRetry={() => selectedLead && loadLeadDetails(selectedLead).catch(() => {})}
         onClose={() => setSelectedLead(null)}
-        onEdit={(lead) => openLeadEditor(lead, !isLoadingLeadDetails && !leadDetailsError)}
+        onEdit={(lead) => {
+          setSelectedLead(null);
+          if (corporate) setEditingCorporateLead(lead);
+          else openLeadEditor(lead, !isLoadingLeadDetails && !leadDetailsError);
+        }}
       />
       {showExportDialog ? (
         <div className="lm-dialog-backdrop" onMouseDown={(event) => {
@@ -696,10 +844,28 @@ export default function LeadManagementPage() {
             {exportMode === 'date' ? (
               <div className="lm-export-dates">
                 <label htmlFor="lead-export-from">From
-                  <input id="lead-export-from" type="date" value={exportFromDate} max={exportToDate || undefined} onChange={(event) => setExportFromDate(event.target.value)} required />
+                  <LeadDatePicker
+                    id="lead-export-from"
+                    name="exportFromDate"
+                    label="export start date"
+                    value={exportFromDate}
+                    max={exportToDate}
+                    onChange={setExportFromDate}
+                    disabled={isExporting}
+                    required
+                  />
                 </label>
                 <label htmlFor="lead-export-to">To
-                  <input id="lead-export-to" type="date" value={exportToDate} min={exportFromDate || undefined} onChange={(event) => setExportToDate(event.target.value)} required />
+                  <LeadDatePicker
+                    id="lead-export-to"
+                    name="exportToDate"
+                    label="export end date"
+                    value={exportToDate}
+                    min={exportFromDate}
+                    onChange={setExportToDate}
+                    disabled={isExporting}
+                    required
+                  />
                 </label>
               </div>
             ) : null}
@@ -769,4 +935,17 @@ export default function LeadManagementPage() {
       ) : null}
     </>
   );
+}
+
+const isCorporateLead = (lead) => {
+  const leadType = [lead?.leadType, lead?.entityType, lead?.customerType, lead?.organizationType]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return leadType.includes('corporate')
+    || Boolean(lead?.entityName || lead?.organizationName || lead?.legalName);
+};
+
+export default function RetailLeadManagementPage() {
+  return <LeadManagementPage />;
 }

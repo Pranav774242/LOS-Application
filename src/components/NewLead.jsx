@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { State } from 'country-state-city';
+import LeadDatePicker from './LeadDatePicker';
 import { getLoanProducts } from '../services/loanProducts';
 import { createLead } from '../services/lead_management';
 
@@ -294,7 +295,7 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
     if (!open) return undefined;
 
     setForm(getLeadFormValues(initialData));
-    setActiveStep(initialData ? 1 : 0);
+    setActiveStep(0);
     setOtpMessage('');
     setMobileMessage('');
     setAadhaarMessage('');
@@ -453,6 +454,12 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
       return false;
     }
 
+    if (activeStep === 0 && !form.dateOfBirth) {
+      setSubmissionError('Date of Birth is required.');
+      document.querySelector('[data-date-picker-trigger="dateOfBirth"]')?.focus();
+      return false;
+    }
+
     return true;
   };
 
@@ -564,7 +571,18 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
       <div className="lead-personal-demographics">
         <label className="lead-field">
           <span>Date of Birth <em>*</em></span>
-          <input type="date" name="dateOfBirth" value={form.dateOfBirth} onChange={handleChange} max={todayInputDate} required />
+          <LeadDatePicker
+            id="lead-date-of-birth"
+            name="dateOfBirth"
+            label="Date of Birth"
+            value={form.dateOfBirth}
+            onChange={(value) => {
+              handleChange({ target: { name: 'dateOfBirth', value } });
+              setSubmissionError('');
+            }}
+            max={todayInputDate}
+            required
+          />
         </label>
         <label className="lead-field">
           <span>Age</span>
@@ -646,7 +664,14 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
 
       <label className="lead-field">
         <span>Passport Expiry Date</span>
-        <input type="date" name="passportExpiryDate" value={form.passportExpiryDate} onChange={handleChange} min={todayInputDate} />
+        <LeadDatePicker
+          id="lead-passport-expiry-date"
+          name="passportExpiryDate"
+          label="Passport Expiry Date"
+          value={form.passportExpiryDate}
+          onChange={(value) => handleChange({ target: { name: 'passportExpiryDate', value } })}
+          min={todayInputDate}
+        />
       </label>
 
     </div>
@@ -815,15 +840,44 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
         return <>
       <label className="lead-field lead-referral-channel">
         <span>Lead Acquisition Channel <em>*</em></span>
-        <select name="acquisitionChannel" value={form.acquisitionChannel} onChange={handleChange} required={!initialData}>
-          <option value="">Select channel</option>
-          {includeCurrentOption(['Bank Generated', 'Branch', 'Website', 'Mobile App', 'Customer Referral', 'Direct Sales', 'Partner / Agent', 'Other'], form.acquisitionChannel).map((channel) => <option key={channel} value={channel}>{channel}</option>)}
-        </select>
+  
+<select
+  name="acquisitionChannel"
+  value={form.acquisitionChannel}
+  onChange={handleChange}
+>
+  <option value="">Select channel</option>
+  {includeCurrentOption(
+    [
+      'Bank Generated',
+      'Branch',
+      'Website',
+      'Mobile App',
+      'Customer Referral',
+      'Direct Sales',
+      'Partner / Agent',
+      'Other'
+    ],
+    form.acquisitionChannel
+  ).map((channel) => (
+    <option key={channel} value={channel}>
+      {channel}
+    </option>
+  ))}
+</select>
+
       </label>
 
       <label className="lead-field lead-referral-date">
         <span>Date</span>
-        <input type="date" name="referralDate" value={form.referralDate} onChange={handleChange} disabled={!referralEnabled} />
+        <LeadDatePicker
+          id="lead-referral-date"
+          name="referralDate"
+          label="Referral Date"
+          value={form.referralDate}
+          onChange={(value) => handleChange({ target: { name: 'referralDate', value } })}
+          disabled={!referralEnabled}
+        />
       </label>
 
       <label className="lead-field lead-referral-partner-id">
@@ -853,7 +907,7 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
 
   const renderFooter = () => (
     <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', marginTop: '28px', paddingTop: '10px' }}>
-      {activeStep > (initialData ? 1 : 0) && (
+      {activeStep > 0 && (
         <button type="button" className="lead-cancel-btn" onClick={() => setActiveStep((current) => current - 1)} style={{ minWidth: '120px' }}>
           <ChevronLeft size={16} /> Previous
         </button>
@@ -888,6 +942,11 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
       window.alert('Please fill all mandatory fields before submitting the lead.');
       return;
     }
+    if (!form.dateOfBirth) {
+      document.querySelector('[data-date-picker-trigger="dateOfBirth"]')?.focus();
+      window.alert('Please fill all mandatory fields before submitting the lead.');
+      return;
+    }
 
     const customerName = [form.namePrefix, form.firstName, form.middleName, form.lastName].filter(Boolean).join(' ').trim();
     const leadData = {
@@ -909,6 +968,20 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
 
     if (initialData) {
       const updates = {
+        customerName,
+        mobileNumber: form.mobileNumber,
+        dateOfBirth: form.dateOfBirth || null,
+        age: numericValue(computedAge),
+        customerType: computedCustomerType || null,
+        panNumber: form.panCard || null,
+        aadhaarNumber: form.aadhaarCard || null,
+        residentialStatus: form.residentialStatus || null,
+        gender: form.gender || null,
+        maritalStatus: form.maritalStatus || null,
+        passportNumber: form.passportNo || null,
+        passportExpiryDate: form.passportExpiryDate || null,
+        emailAddress: form.email || null,
+        numberOfDependents: numericValue(form.dependents),
         loanAmount: numericValue(form.loanAmount),
         tenure: numericValue(tenureMonths),
         numberOfInstalments: numericValue(computedInstalments),
@@ -1018,8 +1091,7 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
                   type="button"
                   key={step.title}
                   className={`lead-step-item${index === activeStep ? ' active' : ''}${index < activeStep ? ' complete' : ''}`}
-                  disabled={Boolean(initialData && index === 0)}
-                  onClick={() => index < activeStep && !(initialData && index === 0) && setActiveStep(index)}
+                  onClick={() => index < activeStep && setActiveStep(index)}
                   aria-current={index === activeStep ? 'step' : undefined}
                   aria-label={`Step ${index + 1}: ${step.title}`}
                 >

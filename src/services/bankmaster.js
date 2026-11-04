@@ -36,18 +36,19 @@ function toApiPayload(form) {
     other_bank_details: form.accounts
       .filter((account) => Object.values(account).some((value) => String(value).trim()))
       .map((account) => ({
+        particulars: account.particulars.trim(),
         bank_name: account.bankName.trim(),
         account_type: account.accountType.trim(),
         account_number: account.accountNumber.trim(),
         micr_code: account.micrCode.trim(),
         ifsc_code: account.ifscCode.trim().toUpperCase()
       })),
+    approval_authority: form.approvalAuthority || null,
     single_party_limit: form.singlePartyLimit === '' ? null : Number(form.singlePartyLimit),
     group_exposure_limit: form.groupExposureLimit === '' ? null : Number(form.groupExposureLimit),
     sanction_margin: form.sanctionMargin === '' ? null : Number(form.sanctionMargin),
     penalty_charge: form.penaltyCharge === '' ? null : Number(form.penaltyCharge),
-    penalty_rate: form.penaltyRate === '' ? null : Number(form.penaltyRate),
-    delegation_power_limit: form.delegationPowerLimit === '' ? null : Number(form.delegationPowerLimit)
+    penalty_rate: form.penaltyRate === '' ? null : Number(form.penaltyRate)
   };
 }
 

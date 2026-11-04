@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://los-backend-at5n.onrender.com";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 export async function getBankProfile() {
   const baseUrl = API_BASE_URL.replace(/\/+$/, "");
@@ -47,6 +47,21 @@ export async function getBankProfile() {
 
   if (!result?.data || typeof result.data !== "object" || Array.isArray(result.data)) {
     throw new Error("The bank profile response did not include organization data.");
+  }
+
+  return result;
+}
+
+export async function createBankBranch(branch) {
+  const response = await fetch('/api/bank-profile/branch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(branch),
+  });
+
+  const result = await response.json().catch(() => null);
+  if (!response.ok || result?.success === false) {
+    throw new Error(result?.message || 'Unable to submit the bank branch.');
   }
 
   return result;

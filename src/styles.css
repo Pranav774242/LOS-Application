@@ -603,6 +603,46 @@
 @keyframes page-header-marquee-scroll{from{transform:translateX(100%)}to{transform:translateX(-100%)}}
 @media(prefers-reduced-motion:reduce){.page-header-marquee-track{animation:none}}
 
+.bank-master-page{width:min(100%,1280px);padding:0 18px 32px}
+.bank-master-page .page-header{max-width:1160px;margin-right:auto;margin-left:auto}
+.bank-master-card{max-width:1160px;margin:0 auto;border-color:#d9e5e2;border-radius:12px;box-shadow:0 12px 34px rgba(24,51,58,.07)}
+.bank-master-layout{min-height:520px}
+.bank-master-steps{max-width:1080px;width:calc(100% - 48px);margin:0 auto;padding:20px 0 16px;border-bottom:0;background:transparent}
+.bank-master-step{min-height:58px;border-color:#e1eae7;border-radius:8px;background:#fff}
+.bank-master-step.active{border-color:#9ac9bc;background:#eef7f3;box-shadow:0 3px 10px rgba(23,126,122,.08)}
+.bank-master-panel{width:min(100%,1080px);margin:0 auto;padding:24px 34px 30px}
+.bank-master-panel-heading{max-width:960px;margin:0 auto 26px;padding-bottom:18px}
+.bank-master-fields{max-width:850px;margin:0 auto;gap:20px 28px}
+.bank-master-field select{width:100%;height:43px;padding:0 11px;border:1px solid #ccd9d9;border-radius:6px;background:#fff;color:#203c42;font:inherit;font-size:13px;outline:none}
+.bank-master-field select:focus{border-color:#568e88;box-shadow:0 0 0 3px rgba(23,126,122,.1)}
+.bank-master-field select[aria-invalid="true"]{border-color:#c94949;background:#fffafa}
+.bank-master-field-hint{color:#718689;font-size:11px;font-weight:400;line-height:1.5}
+.bank-master-actions{max-width:850px;margin:34px auto 0}
+.bank-master-readonly-grid{max-width:850px!important;margin:0 auto}
+.bank-master-readonly-field{min-height:76px;align-content:center;border-color:#e1eae7;border-radius:7px;background:#fbfdfc}
+.bank-master-accounts{max-width:960px;margin:0 auto}
+.bank-master-table-heading{margin-bottom:18px}
+.bank-master-table-heading h3{font-size:15px}
+.bank-master-table-heading p{font-size:12px}
+.bank-master-add-row{min-height:38px;border-color:#b8d5ce;border-radius:6px}
+.bank-master-account-list{display:grid;gap:14px}
+.bank-master-account-card{padding:18px;border:1px solid #dce7e3;border-radius:9px;background:#fbfdfc}
+.bank-master-account-card h4{margin:0 0 16px;color:#315250;font-size:12px;font-weight:800}
+.bank-master-account-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 24px}
+.bank-master-account-fields .bank-master-field input{height:43px;border-radius:6px;background:#fff}
+.bank-master-account-empty{display:grid;justify-items:center;gap:9px;padding:38px 18px;border:1px dashed #cbdad6;border-radius:9px;background:#fbfdfc;color:#718689;text-align:center}
+.bank-master-account-empty svg{color:#418a7b}
+.bank-master-account-empty strong{color:#345553;font-size:13px}
+.bank-master-account-empty span{font-size:11px}
+.bank-master-account-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;padding:12px 14px;border:1px solid #e1eae7;border-radius:8px;background:#f8fbfa;color:#667d7d;font-size:11px}
+.bank-master-account-pagination>div{display:flex;align-items:center;gap:10px}
+.bank-master-account-pagination strong{min-width:78px;color:#355553;text-align:center;font-size:11px}
+.bank-master-account-pagination button{min-height:32px;padding:0 10px;border:1px solid #cbdad6;border-radius:5px;background:#fff;color:#315b57;font:inherit;font-weight:700;cursor:pointer}
+.bank-master-account-pagination button:hover:not(:disabled){border-color:#91bcb1;background:#eff7f4}
+.bank-master-account-pagination button:disabled{cursor:not-allowed;opacity:.5}
+@media(max-width:600px){.bank-master-page{padding-right:12px;padding-left:12px}.bank-master-steps{width:calc(100% - 24px);padding-top:12px}.bank-master-panel{padding:18px 15px 20px}.bank-master-account-fields{grid-template-columns:1fr;gap:15px}.bank-master-account-card{padding:14px}.bank-master-fields{gap:15px}.bank-master-readonly-grid{grid-template-columns:1fr!important}.bank-master-panel-heading{margin-bottom:20px}}
+@media(max-width:480px){.bank-master-account-pagination{align-items:flex-start;flex-direction:column}.bank-master-account-pagination>div{width:100%;justify-content:space-between}}
+
 .sidebar{padding-top:12px;transition:width .2s ease,transform .2s ease}
 .brand-block{justify-content:space-between}
 .sidebar .brand-block{padding-right:8px;padding-left:8px}
@@ -617,3 +657,16 @@
 .sidebar-collapsed .nav-item span{display:none}
 .sidebar-collapsed .main-nav{width:100%}
 .sidebar-collapsed .nav-item{justify-content:center;gap:0;padding-right:0;padding-left:0}
+.login-information-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}
+.login-information-grid.edit{grid-template-columns:repeat(3,minmax(0,1fr))}
+.employee-directory-table{width:100%;min-width:1000px;table-layout:fixed;border-collapse:collapse}
+.employee-directory-table th{padding:10px 9px;border-top:0;font-size:9px;letter-spacing:.55px;text-transform:uppercase;white-space:nowrap}
+.employee-directory-table td{padding:11px 9px;border-bottom:1px solid #edf2f1;vertical-align:middle}
+.employee-directory-table tbody tr:last-child td{border-bottom:0}
+.employee-directory-table tbody tr:hover{background:#fbfdfc}
+.employee-role-badge{text-transform:uppercase;line-height:1.35}
+.employee-status-badge.status-active{background:#dcfce7!important;color:#166534!important}
+.employee-status-badge.status-inactive{background:#f3f4f6!important;color:#4b5563!important}
+.employee-status-badge.status-suspended{background:#fee2e2!important;color:#991b1b!important}
+@media(max-width:980px){.login-information-grid,.login-information-grid.edit{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.login-information-grid{grid-template-columns:1fr}}

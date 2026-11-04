@@ -45,7 +45,7 @@ export default function Header({ menuOpen, onMenu }) {
   ) || getUnavailableValue(profileLoaded, profileError);
   const role = firstText(profile?.user_role, profile?.role, profile?.role_name)
     || getUnavailableValue(profileLoaded, profileError);
-  const designation = firstText(profile?.designation)
+  const designation = firstText(profile?.designation_name)
     || getUnavailableValue(profileLoaded, profileError);
 
   return (

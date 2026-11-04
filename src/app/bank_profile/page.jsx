@@ -1,89 +1,146 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { Building2, ChevronRight, ExternalLink, FileText, Fingerprint, Globe2, Home, Landmark, Mail, MapPin, Network, Phone, Plus, ShieldCheck, X } from 'lucide-react';
-import AppShell from '../../components/AppShell';
-import { PermissionGate } from '../../components/AccessControl';
-import { getBankProfile } from '../../services/bankProfile';
+import { useEffect, useState } from "react";
+import {
+  Building2,
+  ChevronRight,
+  ExternalLink,
+  FileText,
+  Fingerprint,
+  Globe2,
+  Home,
+  Landmark,
+  Mail,
+  MapPin,
+  Network,
+  Phone,
+  Plus,
+  ShieldCheck,
+  X,
+} from "lucide-react";
+import AppShell from "../../components/AppShell";
+import { PermissionGate } from "../../components/AccessControl";
+import { createBankBranch, getBankProfile } from "../../services/bankProfile";
 
 const fieldLabels = {
-  name: 'Bank Name',
-  type: 'Type',
-  id: 'Bank ID',
-  bank_code: 'Bank Code',
-  bank_name: 'Bank Name',
-  legal_name: 'Legal Name',
-  bank_type: 'Bank Type',
-  license_number: 'License Number',
-  PAN: 'PAN',
-  gst_number: 'GST Number',
-  direct_clearing_number: 'Direct Clearing Number',
-  direct_clearing_member: 'Direct Clearing Member',
-  direct_member_iftas: 'Direct IFTAS Member',
-  micr_details: 'MICR Details',
-  ifsc_code: 'IFSC Code',
-  number_of_branches: 'Number of Branches',
-  sponsor_bank_of_clearing: 'Clearing Sponsor Bank',
-  sponsor_bank_of_iftas: 'IFTAS Sponsor Bank',
-  address_type: 'Address Type',
-  unit_gala_name_and_number: 'Unit / Building',
-  street_road: 'Street / Road',
-  landmark: 'Landmark',
-  city: 'City',
-  state: 'State',
-  pincode: 'PIN Code',
-  website: 'Website',
-  regulatory_authority_id: 'Regulatory Authority ID',
-  regulatory_status: 'Regulatory Status',
-  country: 'Country',
-  status: 'Status',
-  contact_email: 'Contact Email',
-  contact_phone: 'Contact Phone',
+  name: "Bank Name",
+  type: "Type",
+  id: "Bank ID",
+  bank_code: "Bank Code",
+  bank_name: "Bank Name",
+  legal_name: "Legal Name",
+  bank_type: "Bank Type",
+  license_number: "License Number",
+  PAN: "PAN",
+  gst_number: "GST Number",
+  direct_clearing_number: "Direct Clearing Number",
+  direct_clearing_member: "Direct Clearing Member",
+  direct_member_iftas: "Direct IFTAS Member",
+  micr_details: "MICR Details",
+  ifsc_code: "IFSC Code",
+  number_of_branches: "Number of Branches",
+  sponsor_bank_of_clearing: "Clearing Sponsor Bank",
+  sponsor_bank_of_iftas: "IFTAS Sponsor Bank",
+  address_type: "Address Type",
+  unit_gala_name_and_number: "Unit / Building",
+  street_road: "Street / Road",
+  landmark: "Landmark",
+  city: "City",
+  state: "State",
+  pincode: "PIN Code",
+  website: "Website",
+  regulatory_authority_id: "Regulatory Authority ID",
+  regulatory_status: "Regulatory Status",
+  country: "Country",
+  status: "Status",
+  contact_email: "Contact Email",
+  contact_phone: "Contact Phone",
 };
 
 const hiddenFields = new Set([
-  'pkid',
-  'registration_number',
-  'CIN',
-  'micr_city_code',
-  'micr_bank_code',
-  'micr_branch_code',
-  'logo',
-  'status',
-  'regulatory_status',
+  "pkid",
+  "registration_number",
+  "CIN",
+  "micr_city_code",
+  "micr_bank_code",
+  "micr_branch_code",
+  "logo",
+  "status",
+  "regulatory_status",
 ]);
 
 const sectionDefinitions = [
-  { id: 'organization', title: 'Organization & Address', description: 'Bank identity, classification and registered address', icon: Building2 },
-  { id: 'regulatory', title: 'Regulatory & Clearing', description: 'Licensing, compliance and clearing network details', icon: ShieldCheck },
-  { id: 'contact', title: 'Contact Information', description: 'Bank contact channels', icon: Phone },
-  { id: 'additional', title: 'Additional Details', description: 'Other information returned by the organization API', icon: Building2 },
+  {
+    id: "organization",
+    title: "Organization & Address",
+    description: "Bank identity, classification and registered address",
+    icon: Building2,
+  },
+  {
+    id: "regulatory",
+    title: "Regulatory & Clearing",
+    description: "Licensing, compliance and clearing network details",
+    icon: ShieldCheck,
+  },
+  {
+    id: "contact",
+    title: "Contact Information",
+    description: "Bank contact channels",
+    icon: Phone,
+  },
+  {
+    id: "additional",
+    title: "Additional Details",
+    description: "Other information returned by the organization API",
+    icon: Building2,
+  },
 ];
 
 function getSectionId(key) {
-  if (/^(name|type|id|pkid|bank_code|bank_name|legal_name|bank_type|number_of_branches|address_type|unit_gala_name_and_number|street_road|landmark|city|state|pincode|country|website|logo)$/i.test(key)) {
-    return 'organization';
+  if (
+    /^(name|type|id|pkid|bank_code|bank_name|legal_name|bank_type|number_of_branches|address_type|unit_gala_name_and_number|street_road|landmark|city|state|pincode|country|website|logo)$/i.test(
+      key,
+    )
+  ) {
+    return "organization";
   }
-  if (/(license|registration|pan|gst|cin|regulatory|clearing|iftas|micr|ifsc|sponsor_bank|^status$)/i.test(key)) {
-    return 'regulatory';
+  if (
+    /(license|registration|pan|gst|cin|regulatory|clearing|iftas|micr|ifsc|sponsor_bank|^status$)/i.test(
+      key,
+    )
+  ) {
+    return "regulatory";
   }
-  if (/(contact|email|phone)/i.test(key)) return 'contact';
-  if (/(^db_|created_at|updated_at)/i.test(key)) return 'system';
-  return 'additional';
+  if (/(contact|email|phone)/i.test(key)) return "contact";
+  if (/(^db_|created_at|updated_at)/i.test(key)) return "system";
+  return "additional";
 }
 
 function getFieldLabel(key) {
-  return fieldLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return (
+    fieldLabels[key] ||
+    key.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
+  );
 }
 
 function formatValue(key, value) {
-  if (value === null || value === undefined || value === '') return '—';
+  if (value === null || value === undefined || value === "") return "—";
 
-  if (key === 'website' || key === 'logo') {
+  if (key === "website" || key === "logo") {
     const url = String(value);
     try {
-      if (['http:', 'https:'].includes(new URL(url).protocol)) {
-        return <a className="bank-profile-link" href={url} target="_blank" rel="noreferrer">{url}<ExternalLink size={15} /></a>;
+      if (["http:", "https:"].includes(new URL(url).protocol)) {
+        return (
+          <a
+            className="bank-profile-link"
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+          >
+            {url}
+            <ExternalLink size={15} />
+          </a>
+        );
       }
     } catch {
       return url;
@@ -91,32 +148,39 @@ function formatValue(key, value) {
     return url;
   }
 
-  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
-  if (typeof value === 'object') return JSON.stringify(value);
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "object") return JSON.stringify(value);
 
   return String(value);
 }
 
 function getFieldIcon(key) {
-  if (/(address|street|road|landmark|city|state|pincode|country)/i.test(key)) return MapPin;
+  if (/(address|street|road|landmark|city|state|pincode|country)/i.test(key))
+    return MapPin;
   if (/website/i.test(key)) return Globe2;
   if (/email/i.test(key)) return Mail;
   if (/phone/i.test(key)) return Phone;
   if (/branch|clearing|iftas|micr|ifsc/i.test(key)) return Network;
   if (/bank|type/i.test(key)) return Landmark;
-  if (/pan|gst|cin|license|registration|regulatory/i.test(key)) return Fingerprint;
+  if (/pan|gst|cin|license|registration|regulatory/i.test(key))
+    return Fingerprint;
   return FileText;
 }
 
 function ProfileField({ field }) {
-  const isStatus = field.key === 'status' || field.key === 'regulatory_status';
+  const isStatus = field.key === "status" || field.key === "regulatory_status";
   const Icon = getFieldIcon(field.key);
   return (
     <div className="bank-profile-field">
-      <span className="bank-profile-field-icon" aria-hidden="true"><Icon size={17} strokeWidth={1.9} /></span>
+      <span className="bank-profile-field-icon" aria-hidden="true">
+        <Icon size={17} strokeWidth={1.9} />
+      </span>
       <div className="bank-profile-field-copy">
         <span>{field.label || getFieldLabel(field.key)}</span>
-        <strong className={isStatus ? 'bank-profile-status-value' : ''}>{isStatus ? <i /> : null}{formatValue(field.key, field.value)}</strong>
+        <strong className={isStatus ? "bank-profile-status-value" : ""}>
+          {isStatus ? <i /> : null}
+          {formatValue(field.key, field.value)}
+        </strong>
       </div>
     </div>
   );
@@ -126,16 +190,23 @@ function ProfileSection({ id, title, description, icon: Icon, fields }) {
   if (!fields.length) return null;
 
   return (
-    <section className={`bank-profile-section bank-profile-section-${id}`} id={id}>
+    <section
+      className={`bank-profile-section bank-profile-section-${id}`}
+      id={id}
+    >
       <header className="bank-profile-section-heading">
-        <span className="bank-profile-section-icon"><Icon size={20} strokeWidth={2.2} /></span>
+        <span className="bank-profile-section-icon">
+          <Icon size={20} strokeWidth={2.2} />
+        </span>
         <div>
           <h2>{title}</h2>
           <p>{description}</p>
         </div>
       </header>
       <div className="bank-profile-fields">
-        {fields.map((field) => <ProfileField field={field} key={field.key} />)}
+        {fields.map((field) => (
+          <ProfileField field={field} key={field.key} />
+        ))}
       </div>
     </section>
   );
@@ -144,23 +215,57 @@ function ProfileSection({ id, title, description, icon: Icon, fields }) {
 export default function BankProfilePage() {
   const [bank, setBank] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [addBranchOpen, setAddBranchOpen] = useState(false);
-  const [branchForm, setBranchForm] = useState({ code: '', name: '', city: '' });
-  const [branchSuccess, setBranchSuccess] = useState('');
+  const [branchForm, setBranchForm] = useState({
+    bankName: "",
+    branchCode: "",
+    branchName: "",
+    rbiLicenseNo: "",
+    registrationNo: "",
+    incorporationDate: "",
+    address: "",
+    workingFrom: "",
+    workingTo: "",
+    address1: "",
+    address2: "",
+    city: "",
+    state: "",
+    country: "",
+    pinCode: "",
+  });
+  const [branchSubmitting, setBranchSubmitting] = useState(false);
+  const [branchSuccess, setBranchSuccess] = useState("");
+  const [branchError, setBranchError] = useState("");
 
   const sections = bank
     ? sectionDefinitions.map((section) => ({
-      ...section,
-      fields: Object.entries(bank)
-        .filter(([key]) => {
-          if (hiddenFields.has(key) || /^(db_|system_|created_at$|updated_at$)/i.test(key)) return false;
-          if (key === 'gst_no' && bank.gst_number !== null && bank.gst_number !== undefined && bank.gst_number !== '') return false;
-          return getSectionId(key) === section.id;
-        })
-        .map(([key, value]) => ({ key, value, label: key === 'gst_no' ? 'GST Number' : undefined })),
-    }))
+        ...section,
+        fields: Object.entries(bank)
+          .filter(([key]) => {
+            if (
+              hiddenFields.has(key) ||
+              /^(db_|system_|created_at$|updated_at$)/i.test(key)
+            )
+              return false;
+            if (
+              key === "gst_no" &&
+              bank.gst_number !== null &&
+              bank.gst_number !== undefined &&
+              bank.gst_number !== ""
+            )
+              return false;
+            return getSectionId(key) === section.id;
+          })
+          .map(([key, value]) => ({
+            key,
+            value,
+            label: key === "gst_no" ? "GST Number" : undefined,
+          })),
+      }))
     : [];
+  
+  console.log("sections", sections);
 
   useEffect(() => {
     let mounted = true;
@@ -170,10 +275,10 @@ export default function BankProfilePage() {
         const response = await getBankProfile();
         if (!mounted) return;
         setBank(response?.data || response || null);
-        setError('');
+        setError("");
       } catch (err) {
         if (!mounted) return;
-        setError(err.message || 'Unable to load bank profile');
+        setError(err.message || "Unable to load bank profile");
       } finally {
         if (mounted) setLoading(false);
       }
@@ -186,23 +291,61 @@ export default function BankProfilePage() {
     };
   }, []);
 
-  function submitBranch(event) {
+  
+  async function submitBranch(event) {
     event.preventDefault();
-    setBranchForm({ code: '', name: '', city: '' });
-    setBranchSuccess('Branch added successfully.');
+    setBranchSubmitting(true);
+    setBranchSuccess("");
+    setBranchError("");
+
+    try {
+      const result = await createBankBranch(branchForm);
+      console.log(
+        "[bank profile] submitted branch:",
+        result.data || branchForm,
+      );
+      setBranchSuccess(
+        "Branch submitted successfully. The payload was logged to the console.",
+      );
+    } catch (submitError) {
+      setBranchError(submitError.message || "Unable to submit the branch.");
+    } finally {
+      setBranchSubmitting(false);
+    }
   }
 
   function closeBranchDialog() {
     setAddBranchOpen(false);
-    setBranchForm({ code: '', name: '', city: '' });
-    setBranchSuccess('');
+    setBranchForm({
+      bankName: "",
+      branchCode: "",
+      branchName: "",
+      rbiLicenseNo: "",
+      registrationNo: "",
+      incorporationDate: "",
+      address: "",
+      workingFrom: "",
+      workingTo: "",
+      address1: "",
+      address2: "",
+      city: "",
+      state: "",
+      country: "",
+      pinCode: "",
+    });
+    setBranchSuccess("");
+    setBranchError("");
   }
 
   return (
     <AppShell title="Bank Profile">
       <>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          rel="preconnect"
+          href="https://fonts.gstatic.com"
+          crossOrigin="anonymous"
+        />
         <link
           href="https://fonts.googleapis.com/css2?family=Google+Sans:ital,opsz,wght@0,17..18,400..700;1,17..18,400..700&display=swap"
           rel="stylesheet"
@@ -215,7 +358,11 @@ export default function BankProfilePage() {
               <span>Bank Profile</span>
             </nav>
             <PermissionGate module="bank-management" action="create">
-              <button className="bank-profile-add-button" type="button" onClick={() => setAddBranchOpen(true)}>
+              <button
+                className="lm-add-button"
+                type="button"
+                onClick={() => setAddBranchOpen(true)}
+              >
                 <Plus size={18} />
                 Add Branch
               </button>
@@ -224,43 +371,83 @@ export default function BankProfilePage() {
           {loading ? (
             <div className="bank-profile-message">Loading bank profile...</div>
           ) : error ? (
-            <div className="bank-profile-message bank-profile-error" role="alert">{error}</div>
+            <div
+              className="bank-profile-message bank-profile-error"
+              role="alert"
+            >
+              {error}
+            </div>
           ) : bank ? (
             <>
               <section className="bank-profile-summary">
                 <div className="bank-profile-identity">
-                  <div className="bank-profile-avatar">{String(bank.bank_name || bank.name || 'B').slice(0, 2).toUpperCase()}</div>
+                  <div className="bank-profile-avatar">
+                    {String(bank.bank_name || bank.name || "B")
+                      .slice(0, 2)
+                      .toUpperCase()}
+                  </div>
                   <div className="bank-profile-identity-copy">
-                    <span className="bank-profile-overline">{bank.legal_name || bank.bank_name || bank.name || 'Bank details'}</span>
-                    <h1>{bank.bank_name || bank.name || 'Bank Profile'}</h1>
+                    <span className="bank-profile-overline">
+                      {bank.legal_name ||
+                        bank.bank_name ||
+                        bank.name ||
+                        "Bank details"}
+                    </span>
+                    <h1>{bank.bank_name || bank.name || "Bank Profile"}</h1>
                     <div className="bank-profile-tags">
-                      {bank.status ? <span className="bank-profile-badge"><i />{String(bank.status).toLowerCase()}</span> : null}
-                      {bank.bank_type || bank.type ? <span>{fieldLabels.bank_type}: {bank.bank_type || bank.type}</span> : null}
+                      {bank.status ? (
+                        <span className="bank-profile-badge">
+                          <i />
+                          {String(bank.status).toLowerCase()}
+                        </span>
+                      ) : null}
+                      {bank.bank_type || bank.type ? (
+                        <span>
+                          {fieldLabels.bank_type}: {bank.bank_type || bank.type}
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                 </div>
                 <div className="bank-profile-summary-facts">
                   {[
-                    { label: 'Bank Code', value: bank.bank_code },
-                    { label: 'Country', value: bank.country },
-                  ].filter((fact) => fact.value !== undefined && fact.value !== null && fact.value !== '').map((fact) => (
-                    <div key={fact.label}><span>{fact.label}</span><strong>{formatValue(fact.label, fact.value)}</strong></div>
-                  ))}
+                    { label: "Bank Code", value: bank.bank_code },
+                    { label: "Country", value: bank.country },
+                  ]
+                    .filter(
+                      (fact) =>
+                        fact.value !== undefined &&
+                        fact.value !== null &&
+                        fact.value !== "",
+                    )
+                    .map((fact) => (
+                      <div key={fact.label}>
+                        <span>{fact.label}</span>
+                        <strong>{formatValue(fact.label, fact.value)}</strong>
+                      </div>
+                    ))}
                 </div>
               </section>
 
               <div className="bank-profile-grid">
-                {sections.map((section) => <ProfileSection key={section.id} {...section} />)}
+                {sections.map((section) => (
+                  <ProfileSection key={section.id} {...section} />
+                ))}
               </div>
             </>
           ) : (
-            <div className="bank-profile-message">No bank profile data was returned.</div>
+            <div className="bank-profile-message">
+              No bank profile data was returned.
+            </div>
           )}
         </div>
         {addBranchOpen && (
-          <div className="bank-profile-modal-backdrop" onClick={closeBranchDialog}>
+          <div
+            className="bank-profile-modal-backdrop"
+            onClick={closeBranchDialog}
+          >
             <section
-              className="bank-profile-modal"
+              className="bank-profile-modal bank-profile-branch-modal"
               role="dialog"
               aria-modal="true"
               aria-labelledby="add-branch-title"
@@ -268,54 +455,122 @@ export default function BankProfilePage() {
             >
               <header className="bank-profile-modal-header">
                 <div>
-                  <h2 id="add-branch-title">Add Branch</h2>
-                  <p>Enter the branch details below.</p>
+                  <h2 id="add-branch-title">Bank Branch Profile</h2>
+                  <p>
+                    Enter the bank and branch details to submit the profile.
+                  </p>
                 </div>
-                <button className="bank-profile-modal-close" type="button" onClick={closeBranchDialog} aria-label="Close add branch dialog">
+                <button
+                  className="bank-profile-modal-close"
+                  type="button"
+                  onClick={closeBranchDialog}
+                  aria-label="Close add branch dialog"
+                >
                   <X size={20} />
                 </button>
               </header>
-              <form className="bank-profile-branch-form" onSubmit={submitBranch}>
-                <label>
-                  Branch Code
-                  <input
-                    autoFocus
-                    required
-                    value={branchForm.code}
-                    onChange={(event) => {
-                      setBranchForm((current) => ({ ...current, code: event.target.value }));
-                      setBranchSuccess('');
-                    }}
-                    placeholder="Enter branch code"
-                  />
-                </label>
-                <label>
-                  Branch Name
-                  <input
-                    required
-                    value={branchForm.name}
-                    onChange={(event) => {
-                      setBranchForm((current) => ({ ...current, name: event.target.value }));
-                      setBranchSuccess('');
-                    }}
-                    placeholder="Enter branch name"
-                  />
-                </label>
-                <label>
-                  City
-                  <input
-                    value={branchForm.city}
-                    onChange={(event) => {
-                      setBranchForm((current) => ({ ...current, city: event.target.value }));
-                      setBranchSuccess('');
-                    }}
-                    placeholder="Enter city"
-                  />
-                </label>
-                {branchSuccess && <p className="bank-profile-branch-success" role="status">{branchSuccess}</p>}
+              <form
+                className="bank-profile-branch-form"
+                onSubmit={submitBranch}
+              >
+                <div className="bank-profile-branch-fields">
+                  {[
+                    ["bankName", "Bank Name", "text", true],
+                    ["branchCode", "Branch Code", "text", true],
+                    ["branchName", "Branch Name", "text", true],
+                    ["rbiLicenseNo", "RBI License No", "text", false],
+                    ["registrationNo", "Registration No", "text", false],
+                    ["incorporationDate", "Incorporation Date", "date", false],
+                    ["address", "Address", "text", false],
+                    ["address1", "Address 1", "text", false],
+                    ["address2", "Address 2", "text", false],
+                    ["city", "City", "text", false],
+                    ["state", "State", "text", false],
+                    ["country", "Country", "text", false],
+                    ["pinCode", "PinCode", "text", false],
+                  ].map(([key, label, type, required]) => (
+                    <label
+                      className={
+                        key === "address" ? "bank-profile-field-wide" : ""
+                      }
+                      key={key}
+                    >
+                      {label}
+                      <input
+                        autoFocus={key === "bankName"}
+                        required={required}
+                        type={type}
+                        value={branchForm[key]}
+                        onChange={(event) => {
+                          setBranchForm((current) => ({
+                            ...current,
+                            [key]: event.target.value,
+                          }));
+                          setBranchSuccess("");
+                          setBranchError("");
+                        }}
+                        placeholder={`Enter ${label.toLowerCase()}`}
+                      />
+                    </label>
+                  ))}
+                  <div className="bank-profile-working-hours">
+                    <span>Working Timings</span>
+                    <label>
+                      From
+                      <input
+                        required
+                        type="time"
+                        value={branchForm.workingFrom}
+                        onChange={(event) =>
+                          setBranchForm((current) => ({
+                            ...current,
+                            workingFrom: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      To
+                      <input
+                        required
+                        type="time"
+                        value={branchForm.workingTo}
+                        onChange={(event) =>
+                          setBranchForm((current) => ({
+                            ...current,
+                            workingTo: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
+                </div>
+                {branchError && (
+                  <p className="bank-profile-branch-error" role="alert">
+                    {branchError}
+                  </p>
+                )}
+                {branchSuccess && (
+                  <p className="bank-profile-branch-success" role="status">
+                    {branchSuccess}
+                  </p>
+                )}
                 <div className="bank-profile-modal-actions">
-                  <button className="bank-profile-cancel-button" type="button" onClick={closeBranchDialog}>Cancel</button>
-                  <button className="bank-profile-add-button" type="submit"><Plus size={17} /> Add Branch</button>
+                  <button
+                    className="bank-profile-cancel-button"
+                    type="button"
+                    onClick={closeBranchDialog}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="lm-add-button"
+                    type="submit"
+                    disabled={branchSubmitting}
+                  >
+                    <Plus size={17} />{" "}
+                    {branchSubmitting ? "Submitting..." : "Submit"}
+                  </button>
                 </div>
               </form>
             </section>
@@ -338,8 +593,10 @@ export default function BankProfilePage() {
           .bank-profile-breadcrumb { display: flex; align-items: center; gap: 10px; margin: 0; color: #6782a4; font-size: 14px; }
           .bank-profile-breadcrumb svg:first-child { color: #607fa6; }
           .bank-profile-breadcrumb svg:nth-child(2) { color: #99acc3; }
-          .bank-profile-add-button { display: inline-flex; align-self: flex-start; align-items: center; justify-content: center; gap: 8px; width: fit-content; margin: 0; min-height: 42px; padding: 0 16px; border: 1px solid #2165e8; border-radius: 9px; background: #2165e8; color: #fff; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; transition: background .18s ease, transform .18s ease; }
-          .bank-profile-add-button:hover { background: #1855c8; transform: translateY(-1px); }
+          .lm-add-button { display: inline-flex; align-self: flex-start; align-items: center; justify-content: center; gap: 8px; width: fit-content; margin: 0; min-height: 42px; padding: 0 16px; border: 1px solid #2165e8; border-radius: 9px; background: #2165e8; color: #fff; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; transition: background .18s ease, transform .18s ease; }
+          .lm-add-button:hover { background: #1855c8; transform: translateY(-1px); }
+          .lm-add-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:0 15px;border:1px solid #177e7a;border-radius:5px;background:#177e7a;color:#fff;font-size:12px;font-weight:700;white-space:nowrap;cursor:pointer}
+          .lm-add-button:hover{border-color:#0c6662;background:#0c6662}
           .bank-profile-summary { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, .55fr); align-items: center; gap: 28px; min-height: 112px; padding: 18px 24px; border: 1px solid var(--bank-line); border-radius: 12px; background: linear-gradient(115deg, #fff 0%, #fbfdff 100%); box-shadow: 0 3px 12px rgb(32 65 105 / 3%); }
           .bank-profile-identity { display: flex; align-items: center; gap: 20px; min-width: 0; }
           .bank-profile-avatar { display: grid; place-items: center; flex: 0 0 72px; width: 72px; height: 72px; border: 1px solid #edf0f6; border-radius: 14px; background: #fff; color: #a61e53; font-size: 24px; font-weight: 800; box-shadow: 0 3px 12px rgb(27 48 78 / 6%); }
@@ -375,17 +632,25 @@ export default function BankProfilePage() {
           .bank-profile-error { border-color: #f2caca; background: #fff7f7; color: #ad3030; }
           .bank-profile-modal-backdrop { position: fixed; z-index: 1000; inset: 0; display: grid; place-items: center; padding: 20px; background: rgb(15 32 55 / 48%); }
           .bank-profile-modal { width: min(100%, 520px); overflow: hidden; border: 1px solid #d8e6fa; border-radius: 14px; background: #fff; box-shadow: 0 24px 70px rgb(15 32 55 / 24%); }
+          .bank-profile-branch-modal { width: min(100%, 1120px); max-height: calc(100vh - 40px); overflow: auto; }
           .bank-profile-modal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 22px 24px; border-bottom: 1px solid #e6edf7; }
           .bank-profile-modal-header h2 { margin: 0; color: #17345f; font-size: 22px; }
           .bank-profile-modal-header p { margin: 6px 0 0; color: #7189a8; font-size: 14px; }
           .bank-profile-modal-close { display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 8px; background: #f1f5fb; color: #526b8c; cursor: pointer; }
           .bank-profile-branch-form { display: grid; gap: 17px; padding: 23px 24px 24px; }
+          .bank-profile-branch-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 17px 20px; }
           .bank-profile-branch-form label { display: grid; gap: 7px; color: #304b70; font-size: 14px; font-weight: 600; }
           .bank-profile-branch-form input { width: 100%; min-height: 44px; box-sizing: border-box; padding: 0 12px; border: 1px solid #cbd9eb; border-radius: 7px; outline: none; color: #17345f; font: inherit; font-size: 15px; }
           .bank-profile-branch-form input:focus { border-color: #2165e8; box-shadow: 0 0 0 3px rgb(33 101 232 / 13%); }
+          .bank-profile-field-wide { grid-column: 1 / -1; }
+          .bank-profile-working-hours { display: grid; grid-template-columns: minmax(150px, 1fr) repeat(2, minmax(180px, 1fr)); align-items: end; gap: 12px; grid-column: 1 / -1; }
+          .bank-profile-working-hours > span { padding-bottom: 14px; color: #304b70; font-size: 14px; font-weight: 600; }
+          .bank-profile-branch-form .bank-profile-working-hours label { gap: 7px; }
+          .bank-profile-branch-error { margin: 0; padding: 11px 13px; border: 1px solid #f1c5c5; border-radius: 7px; background: #fff5f5; color: #ad3030; font-size: 14px; font-weight: 600; }
           .bank-profile-branch-success { margin: 0; padding: 11px 13px; border: 1px solid #b9e8ce; border-radius: 7px; background: #effbf4; color: #147346; font-size: 14px; font-weight: 600; }
           .bank-profile-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 3px; }
           .bank-profile-cancel-button { min-height: 42px; padding: 0 16px; border: 1px solid #cbd9eb; border-radius: 8px; background: #fff; color: #405775; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+          .lm-add-button:disabled { opacity: .65; cursor: wait; transform: none; }
           @media (max-width: 1050px) {
             .bank-profile-summary { grid-template-columns: minmax(0, 1fr) auto; gap: 16px; }
             .bank-profile-section-organization .bank-profile-fields, .bank-profile-section-additional .bank-profile-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -396,6 +661,9 @@ export default function BankProfilePage() {
             .bank-profile-grid { grid-template-columns: 1fr; }
             .bank-profile-section-organization, .bank-profile-section-additional { grid-column: auto; }
             .bank-profile-summary { padding: 20px; }
+            .bank-profile-modal-backdrop { padding: 0; }
+            .bank-profile-branch-modal { width: 100%; max-height: 100vh; min-height: 100vh; border: 0; border-radius: 0; }
+            .bank-profile-branch-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
           }
           @media (max-width: 480px) {
             .bank-profile-toolbar { align-items: flex-start; flex-direction: column; gap: 12px; }
@@ -410,6 +678,12 @@ export default function BankProfilePage() {
             .bank-profile-summary-facts > div { padding: 0 10px; border-left: 1px solid #e6edf5; }
             .bank-profile-summary-facts > div:first-child { padding-left: 0; border-left: 0; }
             .bank-profile-section-heading { padding: 12px 16px; }
+            .bank-profile-branch-form { padding: 18px 16px 20px; }
+            .bank-profile-branch-fields, .bank-profile-working-hours { grid-template-columns: 1fr; }
+            .bank-profile-working-hours > span { padding-bottom: 0; }
+            .bank-profile-field-wide { grid-column: auto; }
+            .bank-profile-modal-actions { flex-direction: column-reverse; }
+            .bank-profile-modal-actions button { width: 100%; }
           }
         `}</style>
       </>

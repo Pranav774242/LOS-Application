@@ -32,7 +32,7 @@ const profileSections = [
   {
     title: "Role and Access Information", icon: ShieldCheck, className: "access",
     fields: [
-      { label: "Designation", keys: ["designation"] },
+      { label: "Designation", keys: ["designation_name"] },
       { label: "User Role", keys: ["user_role", "role", "role_name"] },
       { label: "System Role", keys: ["system_role"] },
       { label: "Login Branch", keys: ["login_branch", "login_branch_name", "branch", "branch_name"] },

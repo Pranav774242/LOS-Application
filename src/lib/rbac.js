@@ -117,7 +117,7 @@ export function getRoutePermission(pathname) {
   if (pathname === '/user_management/add') return ['user-management', 'create'];
   if (pathname.startsWith('/user_management/edit/')) return ['user-management', 'edit'];
   if (pathname.startsWith('/user_management')) return ['user-management', 'view'];
-  if (pathname.startsWith('/lead_managenet') || pathname.startsWith('/lead_generation')) return ['lead-management', 'view'];
+  if (pathname.startsWith('/lead_management') || pathname.startsWith('/lead_managenet') || pathname.startsWith('/lead_generation')) return ['lead-management', 'view'];
   if (pathname.startsWith('/customer_management/customer_onboarding')) return ['loan-applications', 'create'];
   if (pathname.startsWith('/customer_management')) return ['applicant-management', 'view'];
   if (pathname.startsWith('/master_creation')) return ['bank-management', 'edit'];
@@ -126,7 +126,8 @@ export function getRoutePermission(pathname) {
   }
   if (pathname.startsWith('/reports') || pathname.startsWith('/audit_logs')) return ['reports', 'view'];
   if (pathname.startsWith('/settings') || pathname.startsWith('/profile') || pathname.startsWith('/rule_engine')
-    || pathname.startsWith('/interest_rate_master') || pathname.startsWith('/lookup_management')) {
+    || pathname.startsWith('/interest_rate_master') || pathname.startsWith('/gold_rate_master')
+    || pathname.startsWith('/lookup_management')) {
     return ['settings', 'view'];
   }
   if (pathname.startsWith('/loan_eligibility')) return ['loan-applications', 'view'];

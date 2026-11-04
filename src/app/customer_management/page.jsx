@@ -111,7 +111,7 @@ export default function CustomerManagementPage() {
     <AppShell title="Customer Management">
       <div style={{ marginTop: '-15px', marginBottom: '26px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h1 style={{ margin: 0, color: '#23474C', font: '700 23px Manrope' }}>Customer Management</h1>
-        <Link className="primary-button customer-add-button" href="/customer_management/customer_onboarding"><FilePlus2 size={16} /> Add Customer</Link>
+        <Link className="primary-button customer-add-button" href="/customer_management/customer_onboarding"><FilePlus2 size={16} /> Add Individual Customer</Link>
       </div>
 
       <div className="metric-grid">
@@ -210,7 +210,11 @@ export default function CustomerManagementPage() {
         </Modal>
       )}
 
-      <style>{`.customer-add-button{border:0;background:#368262;box-shadow:0 4px 12px #36826225}.customer-add-button:hover{background:#2c6d52}.customer-add-button:focus-visible{outline:2px solid #368262;outline-offset:2px}.customer-management-toolbar{align-items:center;margin-bottom:0}.customer-management-toolbar .input-wrap{height:34px;margin-top:0}.customer-row-actions{display:flex;align-items:center;justify-content:flex-end;gap:4px}.customer-row-actions .icon-button{width:34px;height:34px;border:1px solid transparent}.customer-row-actions .icon-button:hover{border-color:var(--line);background:#f2f8f6;color:var(--teal)}.customer-row-actions .customer-delete:hover,.customer-delete-confirm{border-color:#b83b3b;background:#b83b3b;color:#fff}.customer-row-actions .customer-delete:hover,.customer-delete-confirm:hover{background:#992d2d;color:#fff}`}</style>
+      <style>{`
+        .customer-add-button{display:inline-flex;align-items:center;gap:8px;border:0;background:#368262;box-shadow:0 4px 12px #36826225;text-decoration:none}.customer-add-button:hover{background:#2c6d52}.customer-add-button:focus-visible{outline:2px solid #368262;outline-offset:2px}
+        .customer-management-toolbar{align-items:center;margin-bottom:0}.customer-management-toolbar .input-wrap{height:34px;margin-top:0}
+        .customer-row-actions{display:flex;align-items:center;justify-content:flex-end;gap:4px}.customer-row-actions .icon-button{width:34px;height:34px;border:1px solid transparent}.customer-row-actions .icon-button:hover{border-color:var(--line);background:#f2f8f6;color:var(--teal)}.customer-row-actions .customer-delete:hover,.customer-delete-confirm{border-color:#b83b3b;background:#b83b3b;color:#fff}.customer-row-actions .customer-delete:hover,.customer-delete-confirm:hover{background:#992d2d;color:#fff}
+      `}</style>
     </AppShell>
   );
 }

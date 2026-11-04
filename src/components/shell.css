@@ -1,0 +1,437 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+
+.los-shell {
+  display: flex;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  background: #f5f7f9;
+}
+
+.los-workspace {
+  display: flex;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.los-main-content {
+  width: 100%;
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
+  height: auto;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+
+.los-page-wrap {
+  width: 100%;
+  max-width: 1500px;
+  min-height: auto;
+  flex: none;
+  overflow: visible;
+  padding: 32px 36px 48px;
+}
+
+.los-access-message {
+  padding: 24px;
+  color: #687a8b;
+  font-size: 13px;
+}
+
+.los-access-restricted {
+  max-width: 620px;
+  margin: 48px auto;
+  padding: 26px;
+  border: 1px solid #e2e8ee;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.los-access-restricted h2 {
+  margin: 0 0 8px;
+  color: #172b3e;
+  font-size: 20px;
+}
+
+.los-access-restricted p {
+  margin: 0;
+  color: #697b8c;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.los-dashboard {
+  color: #1d3043;
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+}
+
+.los-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+.los-dashboard-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 24px;
+}
+
+.los-dashboard-eyebrow {
+  margin: 0 0 5px;
+  color: #7e8d9b;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.los-dashboard-heading h2 {
+  margin: 0;
+  color: #172b3e;
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+}
+
+.los-dashboard-heading p:last-child {
+  margin: 6px 0 0;
+  color: #758596;
+  font-size: 13px;
+}
+
+.los-new-application {
+  display: inline-flex;
+  min-height: 39px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 14px;
+  border: 1px solid #daa425;
+  border-radius: 7px;
+  background: #f0b429;
+  color: #182b3d;
+  font-size: 12px;
+  font-weight: 650;
+  text-decoration: none;
+  transition: background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.los-new-application:hover {
+  background: #e4a91b;
+  box-shadow: 0 3px 10px #8f661c2b;
+}
+
+.los-new-application:focus-visible,
+.los-dashboard a:focus-visible {
+  outline: 2px solid #b27c05;
+  outline-offset: 3px;
+}
+
+.los-headline-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.los-headline-card,
+.los-dashboard-panel {
+  border: 1px solid #e4e9ef;
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: 0 2px 7px #20384d08;
+}
+
+.los-headline-card {
+  min-width: 0;
+  min-height: 125px;
+  padding: 17px;
+}
+
+.los-headline-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #758596;
+  font-size: 12px;
+}
+
+.los-headline-icon {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  place-items: center;
+  border-radius: 7px;
+  background: #fff5dc;
+  color: #a9790d;
+}
+
+.los-headline-value {
+  display: block;
+  margin-top: 10px;
+  color: #172b3e;
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+}
+
+.los-headline-note {
+  display: block;
+  margin-top: 7px;
+  color: #8795a3;
+  font-size: 11px;
+}
+
+.los-dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.85fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.los-dashboard-panel {
+  min-width: 0;
+  padding: 19px;
+}
+
+.los-panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 15px;
+}
+
+.los-panel-heading h3 {
+  margin: 0;
+  color: #1d3043;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.los-panel-heading p {
+  margin: 5px 0 0;
+  color: #8795a3;
+  font-size: 11px;
+}
+
+.los-sample-label {
+  color: #98a4af;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.los-action-table-wrap {
+  overflow-x: auto;
+}
+
+.los-action-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.los-action-table th {
+  padding: 10px 8px;
+  border-top: 1px solid #edf0f3;
+  border-bottom: 1px solid #edf0f3;
+  background: #fafbfc;
+  color: #8795a3;
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.los-action-table td {
+  padding: 12px 8px;
+  border-bottom: 1px solid #edf0f3;
+  color: #5e7081;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.los-action-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.los-action-table td strong {
+  display: block;
+  color: #293d50;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.los-action-table td small {
+  display: block;
+  margin-top: 3px;
+  color: #8997a4;
+  font-size: 10px;
+}
+
+.los-action-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 20px;
+  background: #fff5df;
+  color: #956b16;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.los-action-status::before {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  content: '';
+}
+
+.los-action-status.is-review {
+  background: #edf4fb;
+  color: #45769c;
+}
+
+.los-action-status.is-urgent {
+  background: #fff0ed;
+  color: #bd5a4c;
+}
+
+.los-review-link {
+  color: #8b681b;
+  font-size: 10px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.los-pipeline-list {
+  display: grid;
+  gap: 17px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.los-pipeline-row {
+  display: grid;
+  gap: 7px;
+}
+
+.los-pipeline-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #647689;
+  font-size: 11px;
+}
+
+.los-pipeline-label strong {
+  color: #33495d;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.los-pipeline-track {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #eef1f4;
+}
+
+.los-pipeline-bar {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #f0b429;
+}
+
+.los-pipeline-row:nth-child(2) .los-pipeline-bar { background: #527fa7; }
+.los-pipeline-row:nth-child(3) .los-pipeline-bar { background: #759b8d; }
+.los-pipeline-row:nth-child(4) .los-pipeline-bar { background: #a08ab8; }
+.los-pipeline-row:nth-child(5) .los-pipeline-bar { background: #adb7c1; }
+
+@media (max-width: 1100px) {
+  .los-page-wrap {
+    padding-right: 26px;
+    padding-left: 26px;
+  }
+
+  .los-dashboard-grid {
+    grid-template-columns: minmax(0, 1.2fr) minmax(250px, 0.8fr);
+  }
+}
+
+@media (max-width: 899.98px) {
+  .los-dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  .los-page-wrap {
+    padding: 23px 15px 34px;
+  }
+
+  .los-dashboard-heading {
+    align-items: flex-start;
+  }
+
+  .los-dashboard-heading h2 {
+    font-size: 21px;
+  }
+
+  .los-new-application {
+    min-height: 36px;
+    padding: 0 10px;
+    font-size: 11px;
+  }
+
+  .los-headline-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .los-headline-card {
+    min-height: 115px;
+    padding: 13px;
+  }
+
+  .los-headline-value {
+    font-size: 23px;
+  }
+
+  .los-dashboard-panel {
+    padding: 15px 12px;
+  }
+
+  .los-action-table {
+    min-width: 600px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .los-new-application {
+    scroll-behavior: auto;
+    transition-duration: 0.01ms;
+  }
+}

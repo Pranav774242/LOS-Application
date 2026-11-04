@@ -27,6 +27,8 @@ export async function getLoanProducts(signal, accessToken) {
     .filter((product) => product && product.active !== false && product.status?.toUpperCase() !== 'INACTIVE')
     .map((product) => {
       const name = product.name || product.product_name || product.productName || product.label;
+      const rawCode = product.product_code ?? product.productCode ?? product.code;
+      const code = rawCode == null ? '' : String(rawCode).trim();
       const rawRate = product.annual_interest_rate
         ?? product.annualInterestRate
         ?? product.interest_rate
@@ -37,6 +39,7 @@ export async function getLoanProducts(signal, accessToken) {
 
       return {
         id: product.id ?? product.code ?? name,
+        code,
         name,
         annualInterestRate: Number.isFinite(annualInterestRate) && annualInterestRate >= 0 ? annualInterestRate : null,
       };

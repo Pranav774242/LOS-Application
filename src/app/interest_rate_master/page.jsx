@@ -1,13 +1,24 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { CirclePlus, Eye, LoaderCircle, Pencil, Plus, Save, Trash2, X } from 'lucide-react';
+import { CirclePlus, Eye, LoaderCircle, Plus, Save, Trash2, X } from 'lucide-react';
 import AppShell from '../../components/AppShell';
 import { saveInterestRateMaster } from '../../services/interestRateMaster';
+import { getLoanProducts } from '../../services/loanProducts';
 
-const emptyBand = (id) => ({ id, upToMonths: '', normalInterest: '', penalRate: '', adhocRate: '' });
-const initialForm = () => ({ productCode: '', productName: '', effectiveDate: '', bands: [1, 2, 3, 4, 5].map(emptyBand) });
+const getToday = () => {
+  const date = new Date();
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return localDate.toISOString().slice(0, 10);
+};
+const emptyBand = (id) => ({ id, upToAmount: '', upToMonths: '', normalInterest: '', penalRate: '', adhocRate: '' });
+const initialForm = () => ({ productCode: '', productName: '', effectiveDate: getToday(), bands: [emptyBand(1)] });
 const STORAGE_KEY = 'los_interest_rate_master_records';
+
+function formatUpperAmount(amount) {
+  if (amount === undefined || amount === null || amount === '') return '—';
+  return `₹${Number(amount).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+}
 
 function readMasters() {
   try {
@@ -33,12 +44,16 @@ function validate(form) {
   if (!/^[A-Z0-9][A-Z0-9_-]{1,19}$/i.test(form.productCode.trim())) errors.productCode = 'Use 2–20 letters, numbers, hyphens, or underscores.';
   if (form.productName.trim().length < 2 || form.productName.trim().length > 100) errors.productName = 'Enter a product name between 2 and 100 characters.';
   if (!form.effectiveDate) errors.effectiveDate = 'Select an effective date.';
-  else if (form.effectiveDate < new Date().toISOString().slice(0, 10)) errors.effectiveDate = 'Effective date cannot be in the past.';
+  else if (form.effectiveDate < getToday()) errors.effectiveDate = 'Effective date cannot be in the past.';
 
   const completedBands = [];
   form.bands.forEach((band) => {
-    const populated = Object.values(band).some((value, index) => index > 0 && String(value).trim());
+    const populated = ['upToAmount', 'upToMonths', 'normalInterest', 'penalRate', 'adhocRate']
+      .some((field) => String(band[field]).trim());
     if (!populated) return;
+    if (!/^\d+(\.\d{1,2})?$/.test(band.upToAmount) || Number(band.upToAmount) <= 0) {
+      errors[`band-${band.id}-upToAmount`] = 'Enter an amount greater than zero with up to 2 decimal places.';
+    }
     if (!/^\d+$/.test(band.upToMonths) || Number(band.upToMonths) < 1 || Number(band.upToMonths) > 480) {
       errors[`band-${band.id}-upToMonths`] = 'Enter a whole number of months from 1 to 480.';
     }
@@ -48,10 +63,15 @@ function validate(form) {
         errors[`band-${band.id}-${field}`] = `${label} must be between 0 and 100%.`;
       }
     }
-    if (/^\d+$/.test(band.upToMonths)) completedBands.push({ id: band.id, months: Number(band.upToMonths) });
+    if (/^\d+(\.\d{1,2})?$/.test(band.upToAmount) && /^\d+$/.test(band.upToMonths)) {
+      completedBands.push({ id: band.id, amount: Number(band.upToAmount), months: Number(band.upToMonths) });
+    }
   });
-  if (completedBands.length === 0) errors.bands = 'Add at least one rate tier with an upper tenure and normal interest rate.';
+  if (completedBands.length === 0) errors.bands = 'Add at least one rate tier with an upper amount, upper tenure, and normal interest rate.';
   for (let index = 1; index < completedBands.length; index += 1) {
+    if (completedBands[index].amount <= completedBands[index - 1].amount) {
+      errors[`band-${completedBands[index].id}-upToAmount`] = 'Each amount tier must increase beyond the previous upper limit.';
+    }
     if (completedBands[index].months <= completedBands[index - 1].months) {
       errors[`band-${completedBands[index].id}-upToMonths`] = 'Each tenure tier must increase beyond the previous upper limit.';
     }
@@ -73,8 +93,33 @@ export default function InterestRateMasterPage() {
   const [message, setMessage] = useState(null);
   const [masters, setMasters] = useState([]);
   const [dialog, setDialog] = useState(null);
+  const [products, setProducts] = useState([]);
+  const [productsLoading, setProductsLoading] = useState(true);
 
   useEffect(() => setMasters(readMasters()), []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadProducts() {
+      try {
+        const authData = JSON.parse(window.localStorage.getItem('authData') || '{}');
+        const rows = await getLoanProducts(controller.signal, authData.accessToken);
+        if (!controller.signal.aborted) {
+          setProducts(rows.filter((product) => product.code && product.name));
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setMessage({ type: 'error', text: error.message || 'Unable to load products from the backend.' });
+        }
+      } finally {
+        if (!controller.signal.aborted) setProductsLoading(false);
+      }
+    }
+
+    loadProducts();
+    return () => controller.abort();
+  }, []);
 
   function storeMasters(nextMasters) {
     setMasters(nextMasters);
@@ -88,21 +133,17 @@ export default function InterestRateMasterPage() {
     setDialog({ type: 'form' });
   }
 
-  function openEdit(master) {
-    setForm({
-      productCode: master.productCode,
-      productName: master.productName,
-      effectiveDate: master.effectiveDate,
-      bands: master.bands.map((band, index) => ({ ...band, id: index + 1 }))
-    });
-    setErrors({});
-    setMessage(null);
-    setDialog({ type: 'form', master });
-  }
-
   function updateHeader(field, value) {
-    setForm((current) => ({ ...current, [field]: field === 'productCode' ? value.toUpperCase() : value }));
-    setErrors((current) => ({ ...current, [field]: '' }));
+    const normalizedValue = field === 'productCode' ? value.toUpperCase() : value;
+    const selectedProduct = field === 'productCode'
+      ? products.find((product) => product.code.toUpperCase() === value.trim().toUpperCase())
+      : null;
+    setForm((current) => ({
+      ...current,
+      [field]: normalizedValue,
+      ...(selectedProduct ? { productName: selectedProduct.name } : {})
+    }));
+    setErrors((current) => ({ ...current, [field]: '', ...(selectedProduct ? { productName: '' } : {}) }));
     setMessage(null);
   }
 
@@ -122,37 +163,29 @@ export default function InterestRateMasterPage() {
       return;
     }
 
-    const editingMaster = dialog?.master;
-    if (masters.some((master) => master.id !== editingMaster?.id && master.productCode.toLowerCase() === form.productCode.trim().toLowerCase())) {
+    if (masters.some((master) => master.productCode.toLowerCase() === form.productCode.trim().toLowerCase())) {
       setErrors((current) => ({ ...current, productCode: 'An interest rate master with this product code already exists.' }));
       document.getElementById('ir-productCode')?.focus();
       return;
     }
 
     const master = {
-      id: editingMaster?.id || (globalThis.crypto?.randomUUID?.() ?? `rate-master-${Date.now()}`),
-      productCode: form.productCode.trim().toUpperCase(),
+      id: globalThis.crypto?.randomUUID?.() ?? `rate-master-${Date.now()}`,
+      productCode: form.productCode.trim(),
       productName: form.productName.trim(),
       effectiveDate: form.effectiveDate,
-      bands: form.bands.filter((band) => band.upToMonths !== '' && band.normalInterest !== '').map((band, index) => ({ ...band, id: index + 1 })),
+      bands: form.bands.filter((band) => band.upToAmount !== '' && band.upToMonths !== '' && band.normalInterest !== '').map((band, index) => ({ ...band, id: index + 1 })),
       updatedAt: new Date().toISOString()
     };
-
-    if (editingMaster) {
-      storeMasters(masters.map((item) => item.id === editingMaster.id ? master : item));
-      setDialog(null);
-      setMessage({ type: 'success', text: 'Interest rate master updated.' });
-      return;
-    }
 
     setSaving(true);
     try {
       const payload = {
         product_code: master.productCode, product_name: master.productName, effective_date: master.effectiveDate,
         tiers: master.bands.map((band) => ({
-          up_to_months: Number(band.upToMonths), normal_interest_rate: Number(band.normalInterest),
+          up_to_amount: Number(band.upToAmount), up_to_months: Number(band.upToMonths), normal_interest_rate: Number(band.normalInterest),
           penal_rate: band.penalRate === '' ? null : Number(band.penalRate), adhoc_rate: band.adhocRate === '' ? null : Number(band.adhocRate)
-        })).sort((left, right) => left.up_to_months - right.up_to_months)
+        })).sort((left, right) => left.up_to_amount - right.up_to_amount || left.up_to_months - right.up_to_months)
       };
       const result = await saveInterestRateMaster(payload);
       storeMasters([master, ...masters]);
@@ -183,15 +216,22 @@ export default function InterestRateMasterPage() {
     setMessage(null);
   }
 
-  function deleteMaster(master) {
-    storeMasters(masters.filter((item) => item.id !== master.id));
-    setDialog(null);
-    setMessage({ type: 'success', text: `${master.productName} interest rate master deleted.` });
-  }
-
   return (
     <AppShell title="">
       <style>{styles}</style>
+      <style>{`
+        .irm-create:disabled{opacity:.65;cursor:not-allowed}
+        .irm-form .ir-top-fields{grid-template-columns:minmax(180px,.65fr) minmax(260px,1.5fr) minmax(180px,.7fr)}
+        .irm-form .ir-top-fields .ir-field:nth-child(2){grid-column:2/4}
+        .irm-form .ir-top-fields .ir-field:nth-child(3){grid-column:1}
+        .irm-form .ir-table{min-width:900px}
+        .irm-form .ir-table th:last-child,.irm-form .ir-table td:last-child{width:auto;border-right:0}
+        .ir-tier-index{display:flex;align-items:center;justify-content:center;gap:4px}
+        .ir-remove:disabled{opacity:.35;cursor:not-allowed}
+        .irm-tier-summary{max-width:360px;line-height:1.55}
+        @media(max-width:850px){.irm-form .ir-top-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.irm-form .ir-top-fields .ir-field:nth-child(2){grid-column:1/-1;grid-row:2}.irm-form .ir-top-fields .ir-field:nth-child(3){grid-column:1;grid-row:3}}
+        @media(max-width:520px){.irm-form .ir-top-fields{grid-template-columns:1fr}.irm-form .ir-top-fields .ir-field:nth-child(n){grid-column:1;grid-row:auto}}
+      `}</style>
       <main className="irm-wrap">
         <div className="irm-heading">
           <div style={{ marginTop: '-15px', marginBottom: '26px' }}>
@@ -213,18 +253,16 @@ export default function InterestRateMasterPage() {
           <div className="irm-directory-head"><h2 id="irm-directory-title">Interest rate masters</h2><span className="irm-count">{masters.length} {masters.length === 1 ? 'master' : 'masters'}</span></div>
           <div className="irm-list-wrap">
             <table className="irm-list">
-              <thead><tr><th scope="col">Product code</th><th scope="col">Product name</th><th scope="col">Effective date</th><th scope="col">Rate tiers</th><th scope="col">Actions</th></tr></thead>
+              <thead><tr><th scope="col">Product code</th><th scope="col">Product name</th><th scope="col">Effective date</th><th scope="col">Amount / tenure tiers</th><th scope="col">Actions</th></tr></thead>
               <tbody>
                 {masters.map((master) => (
                   <tr key={master.id}>
                     <td className="irm-code">{master.productCode}</td>
                     <td>{master.productName}</td>
                     <td>{master.effectiveDate}</td>
-                    <td>{master.bands.length}</td>
+                    <td className="irm-tier-summary">{master.bands.map((band) => `${formatUpperAmount(band.upToAmount)} / ${band.upToMonths || '—'} mo`).join(' · ')}</td>
                     <td><div className="irm-actions">
                       <button className="irm-icon" type="button" onClick={() => setDialog({ type: 'view', master })} aria-label={`View ${master.productName}`} title="View"><Eye size={16} /></button>
-                      <button className="irm-icon" type="button" onClick={() => openEdit(master)} aria-label={`Edit ${master.productName}`} title="Edit"><Pencil size={15} /></button>
-                      <button className="irm-icon danger" type="button" onClick={() => setDialog({ type: 'delete', master })} aria-label={`Delete ${master.productName}`} title="Delete"><Trash2 size={15} /></button>
                     </div></td>
                   </tr>
                 ))}
@@ -238,47 +276,54 @@ export default function InterestRateMasterPage() {
       {dialog?.type === 'form' && (
         <div className="irm-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) reset(); }}>
           <section className="irm-dialog" role="dialog" aria-modal="true" aria-labelledby="irm-form-title">
-            <header className="irm-dialog-head"><div><h2 id="irm-form-title">{dialog.master ? 'Edit interest rate master' : 'Create interest rate master'}</h2><p>Set product details, effective date, and rate tiers.</p></div><button className="irm-close" type="button" onClick={reset} disabled={saving} aria-label="Close form"><X size={18} /></button></header>
+            <header className="irm-dialog-head"><div><h2 id="irm-form-title">Create interest rate master</h2><p>Enter product details, set the effective date, and define amount and tenure tiers.</p></div><button className="irm-close" type="button" onClick={reset} disabled={saving} aria-label="Close form"><X size={18} /></button></header>
             {message?.type === 'error' && <div className="irm-message error" role="alert">{message.text}</div>}
             <form className="ir-form irm-form" onSubmit={submit} noValidate>
               <div className="ir-top-fields">
-                {[
-                  ['productCode', 'Product Code', 'text'], ['productName', 'Product Name', 'text'], ['effectiveDate', 'Effective Date', 'date']
-                ].map(([field, label, type]) => (
-                  <label className="ir-field" key={field} htmlFor={`ir-${field}`}>
-                    {label} *
-                    <input id={`ir-${field}`} value={form[field]} onChange={(event) => updateHeader(field, event.target.value)} type={type} maxLength={field === 'productCode' ? 20 : field === 'productName' ? 100 : undefined} min={field === 'effectiveDate' ? new Date().toISOString().slice(0, 10) : undefined} autoComplete="off" aria-required="true" aria-invalid={Boolean(errors[field])} aria-describedby={errors[field] ? `ir-${field}-error` : undefined} />
-                    {errors[field] && <small className="ir-error" id={`ir-${field}-error`}>{errors[field]}</small>}
-                  </label>
-                ))}
+                <label className="ir-field" htmlFor="ir-productCode">
+                  Product Code *
+                  <input id="ir-productCode" value={form.productCode} onChange={(event) => updateHeader('productCode', event.target.value)} list="ir-product-suggestions" maxLength="20" autoComplete="off" aria-required="true" aria-invalid={Boolean(errors.productCode)} aria-describedby={errors.productCode ? 'ir-productCode-error' : undefined} />
+                  <datalist id="ir-product-suggestions">{products.map((product) => <option key={String(product.id)} value={product.code}>{product.name}</option>)}</datalist>
+                  {errors.productCode && <small className="ir-error" id="ir-productCode-error">{errors.productCode}</small>}
+                </label>
+                <label className="ir-field" htmlFor="ir-productName">
+                  Product Name *
+                  <input id="ir-productName" value={form.productName} onChange={(event) => updateHeader('productName', event.target.value)} maxLength="100" autoComplete="off" aria-required="true" aria-invalid={Boolean(errors.productName)} aria-describedby={errors.productName ? 'ir-productName-error' : undefined} />
+                  {errors.productName && <small className="ir-error" id="ir-productName-error">{errors.productName}</small>}
+                </label>
+                <label className="ir-field" htmlFor="ir-effectiveDate">
+                  Effective Date *
+                  <input id="ir-effectiveDate" value={form.effectiveDate} onChange={(event) => updateHeader('effectiveDate', event.target.value)} type="date" min={getToday()} aria-required="true" aria-invalid={Boolean(errors.effectiveDate)} aria-describedby={errors.effectiveDate ? 'ir-effectiveDate-error' : undefined} />
+                  {errors.effectiveDate && <small className="ir-error" id="ir-effectiveDate-error">{errors.effectiveDate}</small>}
+                </label>
               </div>
               <div className="ir-table-wrap">
                 <table className="ir-table">
-                  <thead><tr><th>Sr.</th><th>Up to Months</th><th>Normal Int. %</th><th>Penal Rate %</th><th>Adhoc Rate %</th><th><span className="sr-only">Actions</span></th></tr></thead>
+                  <thead><tr><th>Sr.</th><th>Up to Amount (₹)</th><th>Up to Months</th><th>Normal Int. %</th><th>Penal Rate %</th><th>Adhoc Rate %</th></tr></thead>
                   <tbody>
                     {form.bands.map((band, index) => (
                       <tr key={band.id}>
-                        <td>{index + 1}</td>
+                        <td><div className="ir-tier-index"><span>{index + 1}</span><button className="ir-remove" type="button" onClick={() => removeBand(band.id)} disabled={form.bands.length === 1} aria-label={`Remove rate tier ${index + 1}`} title="Remove tier"><Trash2 size={14} /></button></div></td>
                         {[
-                          ['upToMonths', 'Tenure upper limit in months'], ['normalInterest', 'Normal interest rate'], ['penalRate', 'Penal rate'], ['adhocRate', 'Adhoc rate']
+                          ['upToAmount', 'Amount upper limit in rupees'], ['upToMonths', 'Tenure upper limit in months'], ['normalInterest', 'Normal interest rate'], ['penalRate', 'Penal rate'], ['adhocRate', 'Adhoc rate']
                         ].map(([field, label]) => {
                           const errorKey = `band-${band.id}-${field}`;
+                          const isAmountOrMonths = ['upToAmount', 'upToMonths'].includes(field);
                           return (
                             <td className="ir-cell" key={field}>
-                              <input id={`ir-${errorKey}`} aria-label={`${label}, tier ${index + 1}`} type="number" min="0" max={field === 'upToMonths' ? '480' : '100'} step={field === 'upToMonths' ? '1' : '0.01'} inputMode={field === 'upToMonths' ? 'numeric' : 'decimal'} value={band[field]} onChange={(event) => updateBand(band.id, field, event.target.value)} aria-invalid={Boolean(errors[errorKey])} aria-describedby={errors[errorKey] ? `ir-${errorKey}-error` : undefined} />
+                              <input id={`ir-${errorKey}`} aria-label={`${label}, tier ${index + 1}`} type="number" min={field === 'upToAmount' ? '0.01' : field === 'upToMonths' ? '1' : '0'} max={field === 'upToMonths' ? '480' : !isAmountOrMonths ? '100' : undefined} step={field === 'upToMonths' ? '1' : '0.01'} inputMode={field === 'upToMonths' ? 'numeric' : 'decimal'} value={band[field]} onChange={(event) => updateBand(band.id, field, event.target.value)} aria-invalid={Boolean(errors[errorKey])} aria-describedby={errors[errorKey] ? `ir-${errorKey}-error` : undefined} />
                               {errors[errorKey] && <small className="ir-error" id={`ir-${errorKey}-error`}>{errors[errorKey]}</small>}
                             </td>
                           );
                         })}
-                        <td><button className="ir-remove" type="button" onClick={() => removeBand(band.id)} aria-label={`Remove rate tier ${index + 1}`} title="Remove tier"><Trash2 size={15} /></button></td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
               {errors.bands && <p className="ir-error" role="alert">{errors.bands}</p>}
-              <div className="ir-tools"><button className="ir-add" type="button" onClick={addBand}><CirclePlus size={15} /> Add rate tier</button><span className="ir-error">Enter non-overlapping upper-tenure limits in ascending order.</span></div>
-              <div className="ir-actions"><button className="ir-btn" type="button" onClick={reset} disabled={saving}>Cancel</button><button className="ir-btn ir-submit" type="submit" disabled={saving}>{saving ? <LoaderCircle className="ir-spin" size={15} /> : <Save size={15} />}{saving ? 'Saving...' : dialog.master ? 'Save changes' : 'Create master'}</button></div>
+              <div className="ir-tools"><button className="ir-add" type="button" onClick={addBand}><CirclePlus size={15} /> Add rate tier</button><span className="ir-error">Enter increasing amount and tenure limits for each tier.</span></div>
+              <div className="ir-actions"><button className="ir-btn" type="button" onClick={reset} disabled={saving}>Cancel</button><button className="ir-btn ir-submit" type="submit" disabled={saving}>{saving ? <LoaderCircle className="ir-spin" size={15} /> : <Save size={15} />}{saving ? 'Saving...' : 'Create master'}</button></div>
             </form>
           </section>
         </div>
@@ -288,17 +333,8 @@ export default function InterestRateMasterPage() {
         <div className="irm-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDialog(null); }}>
           <section className="irm-dialog" role="dialog" aria-modal="true" aria-labelledby="irm-view-title">
             <header className="irm-dialog-head"><div><h2 id="irm-view-title">{dialog.master.productName}</h2><p>{dialog.master.productCode} · Effective {dialog.master.effectiveDate}</p></div><button className="irm-close" type="button" onClick={() => setDialog(null)} aria-label="Close details"><X size={18} /></button></header>
-            <div className="irm-tier-view"><h3>Rate tiers</h3><table className="irm-tier-table"><thead><tr><th>Up to months</th><th>Normal interest</th><th>Penal rate</th><th>Adhoc rate</th></tr></thead><tbody>{dialog.master.bands.map((band, index) => <tr key={band.id}><td>{band.upToMonths}</td><td>{band.normalInterest}%</td><td>{band.penalRate ? `${band.penalRate}%` : '—'}</td><td>{band.adhocRate ? `${band.adhocRate}%` : '—'}</td></tr>)}</tbody></table></div>
+            <div className="irm-tier-view"><h3>Rate tiers</h3><table className="irm-tier-table"><thead><tr><th>Sr.</th><th>Up to amount</th><th>Up to months</th><th>Normal interest</th><th>Penal rate</th><th>Adhoc rate</th></tr></thead><tbody>{dialog.master.bands.map((band, index) => <tr key={band.id}><td>{index + 1}</td><td>{formatUpperAmount(band.upToAmount)}</td><td>{band.upToMonths}</td><td>{band.normalInterest}%</td><td>{band.penalRate !== '' && band.penalRate != null ? `${band.penalRate}%` : '—'}</td><td>{band.adhocRate !== '' && band.adhocRate != null ? `${band.adhocRate}%` : '—'}</td></tr>)}</tbody></table></div>
             <footer className="irm-dialog-footer"><button className="ir-btn" type="button" onClick={() => setDialog(null)}>Close</button></footer>
-          </section>
-        </div>
-      )}
-
-      {dialog?.type === 'delete' && (
-        <div className="irm-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDialog(null); }}>
-          <section className="irm-dialog narrow" role="alertdialog" aria-modal="true" aria-labelledby="irm-delete-title" aria-describedby="irm-delete-copy">
-            <header className="irm-dialog-head"><div><h2 id="irm-delete-title">Delete interest rate master?</h2><p id="irm-delete-copy">This will remove {dialog.master.productName} ({dialog.master.productCode}) and all of its rate tiers.</p></div><button className="irm-close" type="button" onClick={() => setDialog(null)} aria-label="Cancel deletion"><X size={18} /></button></header>
-            <footer className="irm-dialog-footer"><button className="ir-btn" type="button" onClick={() => setDialog(null)}>Cancel</button><button className="ir-btn ir-submit" type="button" onClick={() => deleteMaster(dialog.master)}><Trash2 size={15} /> Delete master</button></footer>
           </section>
         </div>
       )}

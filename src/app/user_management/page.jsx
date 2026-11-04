@@ -212,25 +212,25 @@ export default function UserManagementPage() {
   const pageEnd = Math.min(pageStart + USERS_PER_PAGE, filteredRecords.length);
   const paginatedRecords = filteredRecords.slice(pageStart, pageEnd);
 
-  const tableColumns = ['Sr. No.', 'Emp. No.', 'Employee Name', 'Mobile Number', 'Branch', 'Designation', 'User Role', 'Status', 'Action'];
+  const tableColumns = ['Sr. No.', 'Emp. No.', 'Employee Name', 'Mobile Number', 'Branch', 'Designation', 'User Role', 'Status'];
 
   // Navigate to dedicated full-page View
 
-  const handleView = (emp) => {
+  // const handleView = (emp) => {
 
-    const id = emp.empNo || emp.employeeId || emp.id;
+  //   const id = emp.empNo || emp.employeeId || emp.id;
 
-    router.push(`/user_management/view/${id}`);
+  //   router.push(`/user_management/view/${id}`);
 
-  };
+  // };
 
-  const handleEdit = (emp) => {
+  // const handleEdit = (emp) => {
 
-    const id = emp.empNo || emp.employeeId || emp.id;
+  //   const id = emp.empNo || emp.employeeId || emp.id;
 
-    router.push(`/user_management/edit/${id}`);
+  //   router.push(`/user_management/edit/${id}`);
 
-  };
+  // };
 
   return (
 
@@ -613,7 +613,7 @@ export default function UserManagementPage() {
 
         <div className="table-scroll">
 
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <table className="employee-directory-table" style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
 
             <thead>
 
@@ -628,34 +628,19 @@ export default function UserManagementPage() {
                     style={{
 
                       width: {
-
-                        'Sr. No.': '64px',
-
-                        'Emp. No.': '120px',
-
-                        'Employee Name': '240px',
-
-                        'Mobile Number': '140px',
-
-                        Branch: '130px',
-
-                        Designation: '150px',
-
-                        'User Role': '130px',
-
-                        Status: '120px',
-
-                        Action: '110px',
-
+                        'Sr. No.': '58px',
+                        'Emp. No.': '105px',
+                        'Employee Name': '210px',
+                        'Mobile Number': '125px',
+                        Branch: '140px',
+                        Designation: '155px',
+                        'User Role': '125px',
+                        Status: '105px',
                       }[column],
-
                       fontWeight: 700,
-
-                      fontSize: '11px',
-
+                      fontSize: '10px',
                       color: '#173e46',
-
-                      textAlign: column === 'Action' ? 'center' : undefined,
+                      textAlign: column === 'Sr. No.' ? 'center' : undefined,
 
                     }}
 
@@ -675,7 +660,7 @@ export default function UserManagementPage() {
 
               {filteredRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={9} style={{ textAlign: 'center', padding: '48px 16px', color: '#7a898b' }}>
+                  <td colSpan={8} style={{ textAlign: 'center', padding: '48px 16px', color: '#7a898b' }}>
                     <div style={{ display: 'grid', placeItems: 'center', gap: '8px' }}>
                       <UserRound size={32} color="#9bb0af" />
                       <strong style={{ color: '#173e46', fontSize: '14px' }}>
@@ -715,13 +700,13 @@ export default function UserManagementPage() {
 
                   >
 
-                    <td style={{ color: '#708087', fontSize: '12px', padding: '14px 12px' }}>
+                    <td style={{ color: '#708087', fontSize: '12px', padding: '11px 9px', textAlign: 'center' }}>
 
                       {pageStart + index + 1}
 
                     </td>
 
-                    <td style={{ padding: '14px 12px' }}>
+                    <td style={{ padding: '11px 9px' }}>
 
                       <strong className="id-text" style={{ fontSize: '12px', fontWeight: 700 }}>
 
@@ -731,7 +716,7 @@ export default function UserManagementPage() {
 
                     </td>
 
-                    <td style={{ padding: '14px 12px' }}>
+                    <td style={{ padding: '11px 9px', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
 
                       <strong style={{ fontSize: '13px', color: '#173e46' }}>
 
@@ -739,63 +724,48 @@ export default function UserManagementPage() {
 
                       </strong>
 
-                      <span style={{ fontSize: '11px', color: '#889a9c', display: 'block', marginTop: '2px' }}>
-
-                        @{emp.userName}
-
-                      </span>
+                      {emp.userName && (
+                        <span style={{ fontSize: '10px', color: '#889a9c', display: 'block', marginTop: '2px', overflowWrap: 'anywhere' }}>
+                          @{emp.userName}
+                        </span>
+                      )}
 
                     </td>
 
-                    <td style={{ color: '#2c4751', fontSize: '12px', padding: '14px 12px' }}>
+                    <td style={{ color: '#2c4751', fontSize: '11px', padding: '11px 9px', whiteSpace: 'nowrap' }}>
 
                       {emp.mobile || '-'}
 
                     </td>
 
-                    <td style={{ color: '#2c4751', fontSize: '12px', padding: '14px 12px' }}>
+                    <td style={{ color: '#2c4751', fontSize: '11px', padding: '11px 9px', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
 
                       {emp.branch || emp.loginBranch || emp.login_branch_name || '-'}
 
                     </td>
 
-                    <td style={{ color: '#2c4751', fontSize: '12px', padding: '14px 12px' }}>
+                    <td style={{ color: '#2c4751', fontSize: '11px', padding: '11px 9px', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
 
                       {emp.designation || emp.jobTitle || emp.position || '-'}
 
                     </td>
 
-                    <td style={{ padding: '14px 12px' }}>
-                      <span className="role-badge" style={{ fontWeight: 600 }}>
+                    <td style={{ padding: '11px 9px' }}>
+                      <span className="role-badge employee-role-badge" style={{ fontWeight: 600, maxWidth: '100%', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
                         {emp.userRole || emp.user_role || emp.role || '-'}
                       </span>
                     </td>
 
-                    <td style={{ padding: '14px 12px' }}>
+                    <td style={{ padding: '11px 9px' }}>
                       <span
+                        className={`employee-status-badge status-${String(emp.status || '').toLowerCase()}`}
                         style={{
                           display: 'inline-block',
-                          padding: '6px 11px',
+                          padding: '5px 9px',
                           borderRadius: '20px',
-                          fontSize: '12px',
+                          fontSize: '10px',
                           fontWeight: 600,
                           whiteSpace: 'nowrap',
-                          background:
-                            String(emp.status || '').toLowerCase() === 'active'
-                              ? '#dcfce7'
-                              : String(emp.status || '').toLowerCase() === 'suspended'
-                              ? '#fee2e2'
-                              : String(emp.status || '').toLowerCase() === 'inactive'
-                              ? '#f3f4f6'
-                              : '#f8fafc',
-                          color:
-                            String(emp.status || '').toLowerCase() === 'active'
-                              ? '#166534'
-                              : String(emp.status || '').toLowerCase() === 'suspended'
-                              ? '#991b1b'
-                              : String(emp.status || '').toLowerCase() === 'inactive'
-                              ? '#4b5563'
-                              : '#64748b',
                           border: '1px solid #e2e8f0',
                         }}
                       >
@@ -803,95 +773,87 @@ export default function UserManagementPage() {
                       </span>
                     </td>
 
-                    <td style={{ padding: '14px 12px', textAlign: 'center' }}>
+                    {/* <td style={{ padding: '14px 12px', textAlign: 'center' }}>
 
                       <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
 
-                        <PermissionGate module="user-management" action="edit">
-                        <button
+                          <PermissionGate module="user-management" action="edit">
+                          <button
 
-                          type="button"
+                            type="button"
 
-                          className="icon-button"
+                            className="icon-button"
 
-                          title="View Employee Details"
+                            title="View Employee Details"
 
-                          aria-label={`View ${emp.name || emp.fullName}`}
+                            aria-label={`View ${emp.name || emp.fullName}`}
 
-                          onClick={() => handleView(emp)}
+                            onClick={() => handleView(emp)}
 
-                          style={{
+                            style={{
 
-                            border: '1px solid #d8e2e1',
+                              border: '1px solid #d8e2e1',
 
-                            width: '32px',
+                              width: '32px',
 
-                            height: '32px',
+                              height: '32px',
 
-                            borderRadius: '6px',
+                              borderRadius: '6px',
 
-                            color: '#167c78',
+                              color: '#167c78',
 
-                            background: '#fff',
+                              background: '#fff',
 
-                          }}
+                            }}
 
-                        >
+                          >
 
-                          <Eye size={15} />
+                            <Eye size={15} />
 
-                        </button>
+                          </button>
 
-                        <button
+                          <button
 
-                          type="button"
+                            type="button"
 
-                          className="icon-button"
+                            className="icon-button"
 
-                          title="Edit Employee"
+                            title="Edit Employee"
 
-                          aria-label={`Edit ${emp.name || emp.fullName}`}
+                            aria-label={`Edit ${emp.name || emp.fullName}`}
 
-                          onClick={() => handleEdit(emp)}
+                            onClick={() => handleEdit(emp)}
 
-                          style={{
+                            style={{
 
-                            border: '1px solid #d8e2e1',
+                              border: '1px solid #d8e2e1',
 
-                            width: '32px',
+                              width: '32px',
 
-                            height: '32px',
+                              height: '32px',
 
-                            borderRadius: '6px',
+                              borderRadius: '6px',
 
-                            color: '#2563eb',
+                              color: '#2563eb',
 
-                            background: '#fff',
+                              background: '#fff',
 
-                          }}
+                            }}
 
-                        >
+                          >
 
-                          <Edit3 size={15} />
+                            <Edit3 size={15} />
 
-                        </button>
-                        </PermissionGate>
+                          </button>
+                          </PermissionGate>
 
                       </div>
 
-                    </td>
+                    </td> */}
 
                   </tr>
 
                   ))}
-                  {Array.from(
-                    { length: USERS_PER_PAGE - paginatedRecords.length },
-                    (_, index) => (
-                      <tr key={`empty-row-${index}`} aria-hidden="true">
-                        <td colSpan={9} style={{ height: '64px', padding: 0 }} />
-                      </tr>
-                    ),
-                  )}
                 </>
 
               )}
