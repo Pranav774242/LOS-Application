@@ -1,12 +1,18 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Check, Eye, LoaderCircle, Package, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
 import AppShell from '../../components/AppShell';
 import PageHeader from '../../components/PageHeader';
-import { saveProductManagementProduct } from '../../services/productManagement';
+import {
+  createProductManagementProduct,
+  deactivateProductManagementProduct,
+  getProductManagementProduct,
+  listProductManagementProducts,
+  searchProductManagementProducts,
+  updateProductManagementProduct
+} from '../../services/productManagement';
 
-const STORAGE_KEY = 'los_product_management_records';
 const initialForm = {
   productCode: '', productName: '', emi: '', emiType: '', minTenure: '', minTenureUnit: 'Months', maxTenure: '', maxTenureUnit: 'Months',
   minAmount: '', maxAmount: '', penalty: '', penaltyPercent: '', daysInYear: '', intBaseMethod: '', interestFrequency: '', calculationMode: '',
@@ -42,25 +48,6 @@ function normalizeYesNo(value) {
 
 function normalizeEmiTiming(value) {
   return ['Arrears', 'Int in Advance'].includes(value) ? value : '';
-}
-
-function readProducts() {
-  try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    const parsed = stored ? JSON.parse(stored) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function persistProducts(products) {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(products));
-  } catch {
-    return false;
-  }
-  return true;
 }
 
 function validate(form, products, editingId) {
@@ -114,23 +101,36 @@ const styles = `
 export default function ProductManagementPage() {
   const [products, setProducts] = useState([]);
   const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [form, setForm] = useState(initialForm);
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState(null);
   const [dialog, setDialog] = useState(null);
 
-  useEffect(() => setProducts(readProducts()), []);
+  useEffect(() => {
+    const controller = new AbortController();
+    const query = search.trim();
+    const loadProducts = query
+      ? searchProductManagementProducts(query, controller.signal)
+      : listProductManagementProducts(controller.signal);
 
-  const filteredProducts = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return products.filter((product) => `${product.productCode} ${product.productName}`.toLowerCase().includes(query));
-  }, [products, search]);
+    setLoading(true);
+    loadProducts
+      .then(setProducts)
+      .catch((error) => {
+        if (error.name !== 'AbortError') {
+          setProducts([]);
+          setStatus({ type: 'error', text: error.message || 'Unable to load products.' });
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
 
-  function storeProducts(nextProducts) {
-    setProducts(nextProducts);
-    if (!persistProducts(nextProducts)) setStatus({ type: 'info', text: 'Changes are available for this session but could not be saved to browser storage.' });
-  }
+    return () => controller.abort();
+  }, [search, refreshKey]);
 
   function openCreate() {
     setForm(initialForm);
@@ -153,6 +153,21 @@ export default function ProductManagementPage() {
     setErrors({});
     setStatus(null);
     setDialog({ type: 'form', product });
+  }
+
+  async function openView(product) {
+    setStatus(null);
+    setDialog({ type: 'view', product, loading: true });
+    try {
+      const details = await getProductManagementProduct(product.id);
+      setDialog((current) => current?.type === 'view' && current.product.id === product.id
+        ? { type: 'view', product: details, loading: false }
+        : current);
+    } catch (error) {
+      setDialog((current) => current?.type === 'view' && current.product.id === product.id
+        ? { ...current, loading: false, error: error.message || 'Unable to load the product.' }
+        : current);
+    }
   }
 
   function change(field, value) {
@@ -206,50 +221,43 @@ export default function ProductManagementPage() {
       return;
     }
 
-    const record = {
-      ...form,
-      productCode: form.productCode.trim(),
-      productName: form.productName.trim(),
-      id: editingProduct?.id || (globalThis.crypto?.randomUUID?.() ?? `product-${Date.now()}`),
-      updatedAt: new Date().toISOString()
-    };
-
-    if (editingProduct) {
-      storeProducts(products.map((product) => product.id === editingProduct.id ? record : product));
-      setStatus({ type: 'success', text: 'Product updated.' });
-      setDialog(null);
-      return;
-    }
-
     setSaving(true);
     try {
-      const result = await saveProductManagementProduct({
-        product_code: record.productCode, product_name: record.productName, emi: form.emi, emi_type: form.emiType,
+      const product = {
+        product_code: form.productCode.trim(), product_name: form.productName.trim(), emi: form.emi, emi_type: form.emiType,
         min_tenure_months: tenureInMonths(form.minTenure, form.minTenureUnit), max_tenure_months: tenureInMonths(form.maxTenure, form.maxTenureUnit), min_amount: Number(form.minAmount),
         max_amount: Number(form.maxAmount), penalty: form.penalty === 'Yes', penalty_percent: form.penalty === 'Yes' ? Number(form.penaltyPercent) : null,
         no_of_days_in_year: Number(form.daysInYear), int_base_method: form.intBaseMethod,
         interest_calculation_frequency: form.interestFrequency, interest_calculation_mode: form.calculationMode,
         delegation_of_power: form.delegationPower.map(({ limit, power }) => ({ limit: Number(limit), power: power.trim() }))
-      });
-      console.log('Product Management API response:', result);
-      storeProducts([record, ...products]);
+      };
+      const result = editingProduct
+        ? await updateProductManagementProduct(editingProduct.id, product)
+        : await createProductManagementProduct(product);
+      setRefreshKey((current) => current + 1);
       setSearch('');
       setDialog(null);
-      setStatus({
-        type: result.configured ? 'success' : 'info',
-        text: result.configured ? result.result?.message || 'Product saved successfully.' : 'Product saved in this browser. The product API endpoint is not configured.'
-      });
+      setStatus({ type: 'success', text: result.message || (editingProduct ? 'Product updated successfully.' : 'Product created successfully.') });
     } catch (error) {
-      setStatus({ type: 'error', text: error.message || 'Unable to save product.' });
+      setStatus({ type: 'error', text: error.message || 'Unable to save the product.' });
     } finally {
       setSaving(false);
     }
   }
 
-  function deleteProduct(product) {
-    storeProducts(products.filter((item) => item.id !== product.id));
-    setDialog(null);
-    setStatus({ type: 'success', text: `${product.productName} deleted.` });
+  async function deleteProduct(product) {
+    setSaving(true);
+    setStatus(null);
+    try {
+      const result = await deactivateProductManagementProduct(product.id);
+      setRefreshKey((current) => current + 1);
+      setDialog(null);
+      setStatus({ type: 'success', text: result.message || `${product.productName} deactivated.` });
+    } catch (error) {
+      setStatus({ type: 'error', text: error.message || 'Unable to deactivate the product.' });
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -298,19 +306,19 @@ export default function ProductManagementPage() {
         <PageHeader title="Product  Master" description="Set effective-dated interest tiers by loan product and tenure." marquee />
         <div className="pm-toolbar">
           <div className="pm-search-group">
-            <label className="pm-search" htmlFor="pm-search"><Search size={16} aria-hidden="true" /><input id="pm-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search product code or name" /></label>
+            <label className="pm-search" htmlFor="pm-search"><Search size={16} aria-hidden="true" /><input id="pm-search" type="search" value={search} onChange={(event) => { setSearch(event.target.value); setStatus(null); }} placeholder="Search product code or name" /></label>
           </div>
           <button type="button" className="pm-add" onClick={openCreate}><Plus size={16} /> Add new product</button>
         </div>
         {status && !dialog && <div className={`pm-status ${status.type}`} role={status.type === 'error' ? 'alert' : 'status'}>{status.type === 'success' ? <Check size={16} /> : null}{status.text}</div>}
 
         <section className="pm-list" aria-labelledby="pm-list-heading">
-          <div className="pm-list-head"><h2 id="pm-list-heading">Product directory</h2><span className="pm-count">{filteredProducts.length} of {products.length} products</span></div>
+          <div className="pm-list-head"><h2 id="pm-list-heading">Product directory</h2><span className="pm-count">{products.length}{search.trim() ? ' matching' : ''} products</span></div>
           <div className="pm-table-wrap">
             <table className="pm-table">
               <thead><tr>{directoryFieldList.map(([, label]) => <th scope="col" key={label}>{label}</th>)}<th scope="col">Actions</th></tr></thead>
               <tbody>
-                {filteredProducts.map((product) => (
+                {!loading && products.map((product) => (
                   <tr key={product.id}>
                     {directoryFieldList.map(([field, label]) => {
                       const value = product[field];
@@ -326,13 +334,14 @@ export default function ProductManagementPage() {
                       return <td className={field === 'productCode' ? 'pm-code' : undefined} data-label={label} key={field}>{displayValue}</td>;
                     })}
                     <td data-label="Actions"><div className="pm-actions">
-                      <button type="button" className="pm-icon" onClick={() => setDialog({ type: 'view', product })} aria-label={`View ${product.productName}`} title="View"><Eye size={16} /></button>
+                      <button type="button" className="pm-icon" onClick={() => openView(product)} aria-label={`View ${product.productName}`} title="View"><Eye size={16} /></button>
                       <button type="button" className="pm-icon" onClick={() => openEdit(product)} aria-label={`Edit ${product.productName}`} title="Edit"><Pencil size={15} /></button>
-                      <button type="button" className="pm-icon danger" onClick={() => setDialog({ type: 'delete', product })} aria-label={`Delete ${product.productName}`} title="Delete"><Trash2 size={15} /></button>
+                      <button type="button" className="pm-icon danger" onClick={() => { setStatus(null); setDialog({ type: 'delete', product }); }} aria-label={`Deactivate ${product.productName}`} title="Deactivate"><Trash2 size={15} /></button>
                     </div></td>
                   </tr>
                 ))}
-                {filteredProducts.length === 0 && <tr><td className="pm-empty" colSpan={directoryFieldList.length + 1}><div className="pm-empty-icon"><Package size={20} /></div><strong>{search ? 'No matching products' : 'No products yet'}</strong><span>{search ? 'Try a different product code or name.' : 'Add your first loan product to start building the directory.'}</span></td></tr>}
+                {loading && <tr><td className="pm-empty" colSpan={directoryFieldList.length + 1}><LoaderCircle className="pm-spin" size={20} /><span>Loading products...</span></td></tr>}
+                {!loading && products.length === 0 && <tr><td className="pm-empty" colSpan={directoryFieldList.length + 1}><div className="pm-empty-icon"><Package size={20} /></div><strong>{search ? 'No matching products' : 'No products yet'}</strong><span>{search ? 'Try a different product code or name.' : 'Add your first loan product to start building the directory.'}</span></td></tr>}
               </tbody>
             </table>
           </div>
@@ -423,7 +432,12 @@ export default function ProductManagementPage() {
         <div className="pm-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDialog(null); }}>
           <section className="pm-dialog" role="dialog" aria-modal="true" aria-labelledby="pm-view-title">
             <header className="pm-dialog-head"><div><h2 id="pm-view-title">{dialog.product.productName}</h2><p>Product details</p></div><button type="button" className="pm-close" onClick={() => setDialog(null)} aria-label="Close product details"><X size={18} /></button></header>
-            <div className="pm-detail">{fieldList.filter(([field]) => field !== 'penaltyPercent' || normalizeYesNo(dialog.product.penalty) === 'Yes').map(([field, label]) => {
+            {dialog.loading
+              ? <div className="pm-empty"><LoaderCircle className="pm-spin" size={20} /><span>Loading product details...</span></div>
+              : dialog.error
+                ? <div className="pm-status error" role="alert">{dialog.error}</div>
+                : <>
+                  <div className="pm-detail">{fieldList.filter(([field]) => field !== 'penaltyPercent' || normalizeYesNo(dialog.product.penalty) === 'Yes').map(([field, label]) => {
               const value = field === 'penalty' ? normalizeYesNo(dialog.product[field])
                 : field === 'emi' ? normalizeEmiTiming(dialog.product[field])
                 : field === 'minTenure' ? formatTenure(dialog.product.minTenure, dialog.product.minTenureUnit)
@@ -431,31 +445,33 @@ export default function ProductManagementPage() {
                     : field === 'penaltyPercent' ? `${dialog.product[field] || '—'}%`
                       : dialog.product[field] || '—';
               return <div className="pm-detail-item" key={field}><span>{label}</span><strong>{value || '—'}</strong></div>;
-            })}</div>
-            <section className="pm-dop pm-dop-view" aria-labelledby="pm-dop-view-title">
-              <h3 id="pm-dop-view-title">Delegation of Power for Sanction</h3>
-              <div className="pm-dop-table-wrap">
-                <table className="pm-dop-table">
-                  <thead><tr><th scope="col">Sr.</th><th scope="col">Limit (₹)</th><th scope="col">Power / Approving Designation</th></tr></thead>
-                  <tbody>
-                    {(Array.isArray(dialog.product.delegationPower) ? dialog.product.delegationPower : []).map((row, index) => (
-                      <tr key={row.id ?? index}><td>{index + 1}</td><td>{row.limit === '' || row.limit == null ? '—' : `₹${Number(row.limit).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`}</td><td>{row.power || '—'}</td></tr>
-                    ))}
-                    {(!Array.isArray(dialog.product.delegationPower) || dialog.product.delegationPower.length === 0) && <tr><td colSpan="3">No sanction authority configured.</td></tr>}
-                  </tbody>
-                </table>
-              </div>
-            </section>
+                  })}</div>
+                  <section className="pm-dop pm-dop-view" aria-labelledby="pm-dop-view-title">
+                    <h3 id="pm-dop-view-title">Delegation of Power for Sanction</h3>
+                    <div className="pm-dop-table-wrap">
+                      <table className="pm-dop-table">
+                        <thead><tr><th scope="col">Sr.</th><th scope="col">Limit (₹)</th><th scope="col">Power / Approving Designation</th></tr></thead>
+                        <tbody>
+                          {(Array.isArray(dialog.product.delegationPower) ? dialog.product.delegationPower : []).map((row, index) => (
+                            <tr key={row.id ?? index}><td>{index + 1}</td><td>{row.limit === '' || row.limit == null ? '—' : `₹${Number(row.limit).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`}</td><td>{row.power || '—'}</td></tr>
+                          ))}
+                          {(!Array.isArray(dialog.product.delegationPower) || dialog.product.delegationPower.length === 0) && <tr><td colSpan="3">No sanction authority configured.</td></tr>}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                </>}
             <footer className="pm-dialog-actions"><button className="pm-btn" type="button" onClick={() => setDialog(null)}>Close</button></footer>
           </section>
         </div>
       )}
 
       {dialog?.type === 'delete' && (
-        <div className="pm-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDialog(null); }}>
+        <div className="pm-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setDialog(null); }}>
           <section className="pm-dialog narrow" role="alertdialog" aria-modal="true" aria-labelledby="pm-delete-title" aria-describedby="pm-delete-copy">
-            <header className="pm-dialog-head"><div><h2 id="pm-delete-title">Delete product?</h2><p id="pm-delete-copy">This will remove {dialog.product.productName} from this product directory.</p></div><button type="button" className="pm-close" onClick={() => setDialog(null)} aria-label="Cancel deletion"><X size={18} /></button></header>
-            <footer className="pm-dialog-actions"><button className="pm-btn" type="button" onClick={() => setDialog(null)}>Cancel</button><button className="pm-btn pm-submit" type="button" onClick={() => deleteProduct(dialog.product)}><Trash2 size={15} /> Delete product</button></footer>
+            <header className="pm-dialog-head"><div><h2 id="pm-delete-title">Deactivate product?</h2><p id="pm-delete-copy">This will mark {dialog.product.productName} as inactive. The product record will be retained.</p></div><button type="button" className="pm-close" onClick={() => setDialog(null)} disabled={saving} aria-label="Cancel deactivation"><X size={18} /></button></header>
+            {status?.type === 'error' && <div className="pm-status error" role="alert">{status.text}</div>}
+            <footer className="pm-dialog-actions"><button className="pm-btn" type="button" onClick={() => setDialog(null)} disabled={saving}>Cancel</button><button className="pm-btn pm-submit" type="button" onClick={() => deleteProduct(dialog.product)} disabled={saving}>{saving ? <LoaderCircle className="pm-spin" size={15} /> : <Trash2 size={15} />}{saving ? ' Deactivating...' : ' Deactivate product'}</button></footer>
           </section>
         </div>
       )}
