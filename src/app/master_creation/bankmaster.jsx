@@ -1,13 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   Building2,
   Check,
   ChevronLeft,
   ChevronRight,
   Landmark,
-  LoaderCircle,
   MapPin,
   Plus,
   RotateCcw,
@@ -15,8 +14,6 @@ import {
   SlidersHorizontal
 } from 'lucide-react';
 import AppShell from '../../components/AppShell';
-import { getBankMaster, updateBankMaster } from '../../services/bankmaster';
-import { getLookupOptions, getLookupTypes } from '../../services/lookups';
 
 const steps = [
   { id: 'bank', label: 'Bank Info', icon: Building2 },
@@ -46,52 +43,6 @@ const emptyForm = () => ({
   accounts: [], approvalAuthority: '',
   singlePartyLimit: '', groupExposureLimit: '', sanctionMargin: '', penaltyCharge: '', penaltyRate: ''
 });
-
-function firstValue(source, keys) {
-  for (const key of keys) {
-    const value = source?.[key];
-    if (value !== undefined && value !== null && value !== '') return value;
-  }
-  return '';
-}
-
-function toForm(profile) {
-  const form = emptyForm();
-  const accountData = firstValue(profile, ['other_bank_details', 'otherBankDetails', 'account_details', 'accountDetails']);
-  const accounts = Array.isArray(accountData) ? accountData.map((account) => ({
-    particulars: String(firstValue(account, ['particulars', 'particular', 'purpose'])),
-    bankName: firstValue(account, ['bank_name', 'bankName']),
-    accountType: firstValue(account, ['account_type', 'accountType']),
-    accountNumber: firstValue(account, ['account_number', 'account_no', 'accountNumber']),
-    micrCode: firstValue(account, ['micr_code', 'micrCode']),
-    ifscCode: firstValue(account, ['ifsc_code', 'ifscCode'])
-  })) : [];
-
-  return {
-    ...form,
-    bankCode: String(firstValue(profile, ['bank_code', 'bankCode', 'code'])),
-    bankName: String(firstValue(profile, ['bank_name', 'bankName', 'name', 'legal_name'])),
-    bankType: String(firstValue(profile, ['bank_type', 'bankType', 'type'])),
-    licenseNumber: String(firstValue(profile, ['license_number', 'registration_license_number', 'licenseNumber', 'registration_number'])),
-    pan: String(firstValue(profile, ['PAN', 'pan', 'pan_number'])),
-    gstNumber: String(firstValue(profile, ['gst_number', 'gst_no', 'gstNumber'])),
-    branchCount: String(firstValue(profile, ['number_of_branches', 'branch_count', 'numberOfBranches'])),
-    addressType: String(firstValue(profile, ['address_type', 'addressType'])),
-    pincode: String(firstValue(profile, ['pincode', 'pin_code', 'postal_code'])),
-    address: String(firstValue(profile, ['unit_gala_name_and_number', 'address', 'address_line_1'])),
-    addressLine2: String(firstValue(profile, ['street_road', 'address_line_2', 'address2'])),
-    landmark: String(firstValue(profile, ['landmark', 'landmark_details'])),
-    city: String(firstValue(profile, ['city'])),
-    state: String(firstValue(profile, ['state', 'state_name'])),
-    accounts,
-    approvalAuthority: String(firstValue(profile, ['approval_authority', 'approvalAuthority'])),
-    singlePartyLimit: String(firstValue(profile, ['single_party_limit', 'singlePartyLimit'])),
-    groupExposureLimit: String(firstValue(profile, ['group_exposure_limit', 'groupExposureLimit'])),
-    sanctionMargin: String(firstValue(profile, ['sanction_margin', 'sanction_margin_percent', 'sanctionMargin'])),
-    penaltyCharge: String(firstValue(profile, ['penalty_charge', 'penaltyCharge'])),
-    penaltyRate: String(firstValue(profile, ['penalty_rate', 'penaltyRate']))
-  };
-}
 
 function validateStep(stepIndex, values) {
   const errors = {};
@@ -171,83 +122,12 @@ function TextField({ label, field, value, onChange, error, hint, required = fals
 
 export default function BankMaster() {
   const [form, setForm] = useState(emptyForm);
-  const [originalForm, setOriginalForm] = useState(null);
+  const [sessionBaseline, setSessionBaseline] = useState(emptyForm);
   const [activeStep, setActiveStep] = useState(0);
   const [errors, setErrors] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [accountDraft, setAccountDraft] = useState(emptyAccount);
   const [editingAccountIndex, setEditingAccountIndex] = useState(null);
-  const [pageError, setPageError] = useState('');
   const [notice, setNotice] = useState('');
-  const [particularOptions, setParticularOptions] = useState([]);
-  const [particularsLoading, setParticularsLoading] = useState(true);
-  const [particularsError, setParticularsError] = useState('');
-  const [particularsRetry, setParticularsRetry] = useState(0);
-
-  async function loadBank() {
-    setLoading(true);
-    setPageError('');
-    try {
-      const response = await getBankMaster();
-      const loadedForm = toForm(response?.data || response || {});
-      setForm(loadedForm);
-      setOriginalForm(loadedForm);
-      setAccountDraft(emptyAccount());
-      setEditingAccountIndex(null);
-    } catch (error) {
-      setPageError(error.message || 'Unable to load bank details.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    loadBank();
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-
-    async function loadParticularOptions() {
-      setParticularsLoading(true);
-      setParticularsError('');
-      setParticularOptions([]);
-      try {
-        const lookupTypes = await getLookupTypes(controller.signal);
-        const normalize = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        const candidates = lookupTypes
-          .filter((lookup) => lookup.status === 'Active' && normalize(`${lookup.code} ${lookup.name}`).includes('particular'))
-          .sort((first, second) => {
-            const firstExact = ['particular', 'particulars'].includes(normalize(first.code)) || ['particular', 'particulars'].includes(normalize(first.name));
-            const secondExact = ['particular', 'particulars'].includes(normalize(second.code)) || ['particular', 'particulars'].includes(normalize(second.name));
-            return Number(secondExact) - Number(firstExact);
-          });
-        if (!candidates.length) {
-          throw new Error('Create an active “Particulars” lookup type in Lookup Management to populate this dropdown.');
-        }
-
-        const options = await getLookupOptions(candidates[0].code, controller.signal);
-        if (!controller.signal.aborted) {
-          const activeOptions = options.filter((option) => option.status === 'Active');
-          if (activeOptions.length === 0) {
-            throw new Error('The active “Particulars” lookup has no options. Add active options in Lookup Management and retry.');
-          }
-          setParticularOptions(activeOptions);
-        }
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          setParticularOptions([]);
-          setParticularsError(error.message || 'Unable to load Particulars options from the backend.');
-        }
-      } finally {
-        if (!controller.signal.aborted) setParticularsLoading(false);
-      }
-    }
-
-    loadParticularOptions();
-    return () => controller.abort();
-  }, [particularsRetry]);
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -259,10 +139,6 @@ export default function BankMaster() {
     setAccountDraft((current) => ({ ...current, [field]: value }));
     setErrors((current) => ({ ...current, accountDraft: '', [`account-draft-${field}`]: '' }));
     setNotice('');
-  }
-
-  function retryParticulars() {
-    setParticularsRetry((current) => current + 1);
   }
 
   function addAccount() {
@@ -342,28 +218,15 @@ export default function BankMaster() {
     setErrors({});
   }
 
-  async function saveAccountsAndNext() {
-    if (saving || !validateCurrentStep()) return;
-
-    setSaving(true);
-    setPageError('');
-    setNotice('');
-    try {
-      const response = await updateBankMaster(form);
-      const savedForm = { ...form, accounts: form.accounts.map((account) => ({ ...account })) };
-      setOriginalForm(savedForm);
-      setNotice(response?.message || 'Bank account details saved successfully.');
-      setErrors({});
-      setActiveStep(3);
-    } catch (error) {
-      setPageError(error.message || 'Unable to save bank account details.');
-    } finally {
-      setSaving(false);
-    }
+  function saveAccountsAndNext() {
+    if (!validateCurrentStep()) return;
+    setNotice('Account details are kept for this page session only.');
+    setErrors({});
+    setActiveStep(3);
   }
 
   function cancelChanges() {
-    if (originalForm) setForm({ ...originalForm, accounts: originalForm.accounts.map((account) => ({ ...account })) });
+    setForm({ ...sessionBaseline, accounts: sessionBaseline.accounts.map((account) => ({ ...account })) });
     setAccountDraft(emptyAccount());
     setEditingAccountIndex(null);
     setErrors({});
@@ -371,7 +234,7 @@ export default function BankMaster() {
     setNotice('Changes discarded.');
   }
 
-  async function submitForm(event) {
+  function submitForm(event) {
     event.preventDefault();
     const allErrors = steps.reduce((collected, _step, index) => ({ ...collected, ...validateStep(index, form) }), {});
     setErrors(allErrors);
@@ -391,20 +254,10 @@ export default function BankMaster() {
       return;
     }
 
-    setSaving(true);
-    setPageError('');
-    setNotice('');
-    try {
-      const response = await updateBankMaster(form);
-      console.log("Bank Master Submit payload:", form);
-      setOriginalForm({ ...form, accounts: form.accounts.map((account) => ({ ...account })) });
-      setNotice(response?.message || 'Bank details updated successfully.');
-      setActiveStep(0);
-    } catch (error) {
-      setPageError(error.message || 'Unable to update bank details.');
-    } finally {
-      setSaving(false);
-    }
+    const savedForm = { ...form, accounts: form.accounts.map((account) => ({ ...account })) };
+    setSessionBaseline(savedForm);
+    setNotice('Changes are kept for this page session only. Reloading clears them.');
+    setActiveStep(0);
   }
 
   const currentStep = steps[activeStep];
@@ -416,29 +269,17 @@ export default function BankMaster() {
           <h1 style={{ margin: 0, color: '#23474C', font: '700 23px Manrope' }}>
             Bank Master
           </h1>
-          <div className="page-header-marquee" role="note" aria-label="Set effective-dated interest tiers by loan product and tenure.">
+          <div className="page-header-marquee" role="note" aria-label="Manage bank information, accounts, and lending limits for this session.">
             <div className="page-header-marquee-window" aria-hidden="true">
               <div className="page-header-marquee-track">
-                <span>Set effective-dated interest tiers by loan product and tenure.</span>
+                <span>Manage bank information, accounts, and lending limits for this session.</span>
               </div>
             </div>
           </div>
         </div>
-
-        {pageError && (
-          <div className="bank-master-alert" role="alert">
-            <span>{pageError}</span>
-            {!loading && !originalForm && <button type="button" onClick={loadBank}>Try again</button>}
-          </div>
-        )}
         {notice && <p className="bank-master-success" role="status"><Check size={16} />{notice}</p>}
 
         <section className="bank-master-card" aria-label="Bank master editor">
-          {loading ? (
-            <div className="bank-master-loading"><LoaderCircle size={22} /> Loading bank details...</div>
-          ) : !originalForm ? (
-            <div className="bank-master-empty">Bank details could not be loaded. Try again to continue.</div>
-          ) : (
             <form onSubmit={submitForm} noValidate>
               <div className="bank-master-layout">
                 <nav className="bank-master-steps" aria-label="Bank details sections">
@@ -468,42 +309,26 @@ export default function BankMaster() {
                   </header>
 
                   {activeStep === 0 && (
-                    <div className="bank-master-readonly-grid" aria-readonly="true">
-                      <p className="bank-master-readonly-note"><Landmark size={16} /> Bank information is managed by your organization and cannot be edited here.</p>
-                      {[
-                        ['Bank Code', form.bankCode],
-                        ['Bank Name', form.bankName],
-                        ['Bank Type', form.bankType],
-                        ['Registration License No.', form.licenseNumber],
-                        ['PAN No.', form.pan],
-                        ['G.S.T. No.', form.gstNumber],
-                        ['No. of Branches', form.branchCount]
-                      ].map(([label, value]) => (
-                        <div className="bank-master-readonly-field" key={label}>
-                          <span>{label} <em aria-label="required">*</em></span>
-                          <strong>{value || 'Not provided by backend'}</strong>
-                        </div>
-                      ))}
+                    <div className="bank-master-fields">
+                      <TextField label="Bank Code" field="bankCode" value={form.bankCode} onChange={(event) => updateField('bankCode', event.target.value)} error={errors.bankCode} required maxLength={20} />
+                      <TextField label="Bank Name" field="bankName" value={form.bankName} onChange={(event) => updateField('bankName', event.target.value)} error={errors.bankName} required maxLength={120} />
+                      <TextField label="Bank Type" field="bankType" value={form.bankType} onChange={(event) => updateField('bankType', event.target.value)} error={errors.bankType} required maxLength={60} />
+                      <TextField label="Registration License No." field="licenseNumber" value={form.licenseNumber} onChange={(event) => updateField('licenseNumber', event.target.value)} error={errors.licenseNumber} maxLength={30} />
+                      <TextField label="PAN No." field="pan" value={form.pan} onChange={(event) => updateField('pan', event.target.value.toUpperCase())} error={errors.pan} maxLength={10} autoCapitalize="characters" />
+                      <TextField label="G.S.T. No." field="gstNumber" value={form.gstNumber} onChange={(event) => updateField('gstNumber', event.target.value.toUpperCase())} error={errors.gstNumber} maxLength={15} autoCapitalize="characters" />
+                      <TextField label="No. of Branches" field="branchCount" value={form.branchCount} onChange={(event) => updateField('branchCount', event.target.value)} error={errors.branchCount} type="number" min="1" step="1" inputMode="numeric" />
                     </div>
                   )}
 
                   {activeStep === 1 && (
-                    <div className="bank-master-readonly-grid" aria-readonly="true">
-                      <p className="bank-master-readonly-note"><MapPin size={16} /> Address details are managed by your organization and cannot be edited here.</p>
-                      {[
-                        ['Address Type', form.addressType],
-                        ['Pincode', form.pincode],
-                        ['Address', form.address],
-                        ['Address 2', form.addressLine2],
-                        ['Landmark', form.landmark],
-                        ['City', form.city],
-                        ['State / Union Territory', form.state]
-                      ].map(([label, value]) => (
-                        <div className="bank-master-readonly-field" key={label}>
-                          <span>{label}</span>
-                          <strong>{value || 'Not provided by backend'}</strong>
-                        </div>
-                      ))}
+                    <div className="bank-master-fields">
+                      <TextField label="Address Type" field="addressType" value={form.addressType} onChange={(event) => updateField('addressType', event.target.value)} maxLength={60} />
+                      <TextField label="Pincode" field="pincode" value={form.pincode} onChange={(event) => updateField('pincode', event.target.value)} maxLength={12} />
+                      <TextField label="Address" field="address" value={form.address} onChange={(event) => updateField('address', event.target.value)} maxLength={160} />
+                      <TextField label="Address 2" field="addressLine2" value={form.addressLine2} onChange={(event) => updateField('addressLine2', event.target.value)} maxLength={160} />
+                      <TextField label="Landmark" field="landmark" value={form.landmark} onChange={(event) => updateField('landmark', event.target.value)} maxLength={120} />
+                      <TextField label="City" field="city" value={form.city} onChange={(event) => updateField('city', event.target.value)} maxLength={100} />
+                      <TextField label="State / Union Territory" field="state" value={form.state} onChange={(event) => updateField('state', event.target.value)} maxLength={100} />
                     </div>
                   )}
 
@@ -514,25 +339,8 @@ export default function BankMaster() {
                       </div>
                                       <section className="bank-master-account-entry" aria-label="Add bank account">
                                         <h4>{editingAccountIndex === null ? 'New account' : `Edit account ${editingAccountIndex + 1}`}</h4>
-                                        {particularsError && (
-                                          <p className="bank-master-particulars-error" role="alert">
-                                            <span>{particularsError}</span>
-                                            <button type="button" onClick={retryParticulars} disabled={particularsLoading}>Retry</button>
-                                          </p>
-                                        )}
                                         <div className="bank-master-account-fields">
-                                          <label className="bank-master-field">
-                                            <span>Particulars</span>
-                                            <select
-                                              id="bank-master-account-draft-particulars"
-                                              value={accountDraft.particulars}
-                                              disabled={particularsLoading || particularOptions.length === 0}
-                                              onChange={(event) => updateAccountDraft('particulars', event.target.value)}
-                                            >
-                                              <option value="">{particularsLoading ? 'Loading particulars...' : 'Select particulars'}</option>
-                                              {particularOptions.map((option) => <option value={option.name} key={String(option.id)}>{option.name}</option>)}
-                                            </select>
-                                          </label>
+                                          <TextField label="Particulars" field="account-draft-particulars" value={accountDraft.particulars} onChange={(event) => updateAccountDraft('particulars', event.target.value)} maxLength={100} />
                                           {[
                                             ['bankName', 'Bank Name', 120],
                                             ['accountNumber', 'Account Number', 34],
@@ -615,7 +423,7 @@ export default function BankMaster() {
                         <div className="bank-master-account-empty">
                           <Landmark size={22} />
                           <strong>No bank accounts added</strong>
-                          <span>Complete the account details above and select “Save”.</span>
+                          <span>Complete the account details above and select “Save account”.</span>
                         </div>
                       )}
                     </div>
@@ -648,20 +456,17 @@ export default function BankMaster() {
                     <div>
                       {activeStep > 0 && <button className="bank-master-previous" type="button" onClick={() => { setActiveStep((step) => step - 1); setErrors({}); }}><ChevronLeft size={17} /> Previous</button>}
                       {activeStep < steps.length - 1 ? (
-                        <button className="bank-master-next" type="button" onClick={activeStep === 2 ? saveAccountsAndNext : goNext} disabled={saving}>
-                          {activeStep === 2 && saving ? <LoaderCircle className="bank-master-spinner" size={16} /> : null}
-                          {activeStep === 2 ? saving ? 'Saving...' : 'Next' : 'Next'}
-                          {!saving && <ChevronRight size={17} />}
+                        <button className="bank-master-next" type="button" onClick={activeStep === 2 ? saveAccountsAndNext : goNext}>
+                          Next<ChevronRight size={17} />
                         </button>
                       ) : (
-                        <button className="bank-master-next" type="submit" disabled={saving}>{saving ? <LoaderCircle className="bank-master-spinner" size={16} /> : <Save size={16} />}{saving ? 'Saving...' : 'Submit'}</button>
+                        <button className="bank-master-next" type="submit"><Save size={16} />Save for this session</button>
                       )}
                     </div>
                   </footer>
                 </div>
               </div>
             </form>
-          )}
         </section>
       </div>
       <style>{`
@@ -669,8 +474,6 @@ export default function BankMaster() {
         .bank-master-account-entry h4{margin:0 0 16px;color:#315250;font-size:12px;font-weight:800}
         .bank-master-account-entry-actions{display:flex;align-items:center;gap:12px;margin-top:16px}
         .bank-master-account-entry>.bank-master-field-error{display:block;margin-top:8px}
-        .bank-master-particulars-error{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 14px;padding:10px 12px;border:1px solid #e8cbcb;border-radius:5px;background:#fff7f7;color:#a43838;font-size:11px;line-height:1.5}
-        .bank-master-particulars-error button{flex:none;color:#176d67;font-size:11px;font-weight:700;text-decoration:underline}
         .bank-master-account-cancel-edit,.bank-master-account-actions button{color:#176d67;font-size:11px;font-weight:700;text-decoration:underline}
         .bank-master-account-table-wrap{overflow:auto;border:1px solid #dce7e3;border-radius:8px}
         .bank-master-account-table{width:100%;min-width:800px;border-collapse:collapse;background:#fff}
@@ -678,19 +481,10 @@ export default function BankMaster() {
         .bank-master-account-table th{background:#f3f7f6;color:#52696b;font-size:10px;font-weight:800}
         .bank-master-account-table tbody tr:last-child td{border-bottom:0}
         .bank-master-account-actions{display:flex;gap:12px}
-        .bank-master-readonly-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 22px;max-width:900px}
-        .bank-master-readonly-note{grid-column:1/-1;display:flex;align-items:center;gap:8px;margin:0 0 4px;padding:11px 13px;border:1px solid #cfe3df;border-radius:5px;background:#f2f8f6;color:#406864;font-size:12px;line-height:1.5}
-        .bank-master-readonly-note svg{flex:none;color:#177e7a}
-        .bank-master-readonly-field{display:grid;gap:7px;min-width:0;padding:11px 12px;border:1px solid #dce6e5;border-radius:5px;background:#f8faf9}
-        .bank-master-readonly-field span{color:#355157;font-size:12px;font-weight:600}
-        .bank-master-readonly-field em{color:#bd4545;font-style:normal}
-        .bank-master-readonly-field strong{min-height:19px;overflow-wrap:anywhere;color:#203c42;font-size:13px;font-weight:600}
         .bank-master-table th:last-child,.bank-master-table td:last-child{width:48px}
         .bank-master-table-empty{text-align:center!important;color:#76898c!important}
         .bank-master-table th:first-child,.bank-master-table td:first-child{width:170px}
         .bank-master-table td select{width:100%;min-width:130px;height:32px;padding:0 6px;border:1px solid #d3dfdf;border-radius:4px;background:#f4f7f6;color:#687a7c;font-size:10px}
-        .bank-master-api-note{margin:9px 0 0;color:#718689;font-size:11px;line-height:1.5}
-        @media(max-width:600px){.bank-master-readonly-grid{grid-template-columns:1fr}}
       `}</style>
     </AppShell>
   );

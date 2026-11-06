@@ -1,32 +1,17 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { CirclePlus, Eye, Plus, Save, Trash2, X } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { CirclePlus, Eye, LoaderCircle, Pencil, Plus, Save, Search, Trash2, X } from 'lucide-react';
 import AppShell from '../../components/AppShell';
+import { deleteGoldRateMaster, getGoldRateMasters, saveGoldRateMaster, searchGoldProducts } from '../../services/goldRateMaster';
 
-const STORAGE_KEY = 'los_gold_rate_master_records';
 const emptyRate = (id) => ({ id, purityCarat: '', netWeight: '', rate: '', marginPercent: '' });
 const initialForm = () => ({
+  productName: '',
   productCode: '',
-  effectiveDate: '',
+  effectiveDate: todayString(),
   rates: [emptyRate(1)]
 });
-
-function isGoldMaster(value) {
-  return value
-    && typeof value.id === 'string'
-    && typeof value.productCode === 'string'
-    && typeof value.effectiveDate === 'string'
-    && Array.isArray(value.rates)
-    && value.rates.every((rate) => (
-      rate
-      && typeof rate.id === 'number'
-      && typeof rate.purityCarat === 'string'
-      && typeof rate.netWeight === 'string'
-      && typeof rate.rate === 'string'
-      && typeof rate.marginPercent === 'string'
-    ));
-}
 
 function todayString() {
   const today = new Date();
@@ -34,12 +19,11 @@ function todayString() {
   return new Date(today.getTime() - offset * 60_000).toISOString().slice(0, 10);
 }
 
-function validate(form) {
+function validate(form, selectedProduct) {
   const errors = {};
-  const productCode = form.productCode.trim();
 
-  if (!/^[A-Z0-9][A-Z0-9_-]{1,19}$/i.test(productCode)) {
-    errors.productCode = 'Use 2–20 letters, numbers, hyphens, or underscores.';
+  if (selectedProduct?.name !== form.productName.trim() || selectedProduct?.code !== form.productCode) {
+    errors.productName = 'Select a product from the product list.';
   }
   if (!form.effectiveDate) {
     errors.effectiveDate = 'Select an effective date.';
@@ -159,49 +143,115 @@ export default function GoldRateMasterPage() {
   const [masters, setMasters] = useState([]);
   const [form, setForm] = useState(initialForm);
   const [errors, setErrors] = useState({});
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [products, setProducts] = useState([]);
+  const [productsLoading, setProductsLoading] = useState(false);
+  const [productSearchError, setProductSearchError] = useState('');
   const [dialog, setDialog] = useState(null);
   const [message, setMessage] = useState(null);
+  const [mastersError, setMastersError] = useState('');
+  const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
+  const loadMasters = useCallback(async () => {
+    setLoading(true);
     try {
-      const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (!Array.isArray(parsed) || !parsed.every(isGoldMaster)) {
-          throw new Error('Saved gold rate records have an invalid format.');
-        }
-        setMasters(parsed);
-      }
+      setMasters(await getGoldRateMasters());
+      setMastersError('');
     } catch (error) {
-      console.error('Unable to load saved gold rate masters.', error);
-      setMessage({
-        type: 'error',
-        text: error instanceof SyntaxError
-          ? 'Saved gold rate records could not be read. Clear the invalid browser data to continue.'
-          : error instanceof Error ? error.message : 'Unable to load saved gold rate masters.'
-      });
+      console.error('Unable to load gold rate masters.', error);
+      setMastersError('Unable to load gold rate masters. Please try again.');
     } finally {
       setLoading(false);
     }
   }, []);
 
+  useEffect(() => {
+    loadMasters();
+  }, [loadMasters]);
+
+  useEffect(() => {
+    const query = form.productName.trim();
+    if (dialog?.type !== 'form' || !query || selectedProduct) {
+      setProducts([]);
+      setProductsLoading(false);
+      setProductSearchError('');
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    setProductsLoading(true);
+    setProductSearchError('');
+    const timer = window.setTimeout(async () => {
+      try {
+        const results = await searchGoldProducts(query, controller.signal);
+        if (!controller.signal.aborted) setProducts(results);
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error('Unable to search products for gold rate master.', error);
+          setProductSearchError('Unable to search products. Please try again.');
+        }
+      } finally {
+        if (!controller.signal.aborted) setProductsLoading(false);
+      }
+    }, 300);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [dialog?.type, form.productName, selectedProduct]);
+
   function openCreate() {
     setForm(initialForm());
+    setSelectedProduct(null);
     setErrors({});
     setDialog({ type: 'form' });
     setMessage(null);
   }
 
+  function openEdit(master) {
+    const product = { name: master.productName, code: master.productCode };
+    setForm({
+      productName: product.name,
+      productCode: product.code,
+      effectiveDate: master.effectiveDate,
+      rates: master.rates.length ? master.rates.map((rate, index) => ({ ...rate, id: index + 1 })) : [emptyRate(1)]
+    });
+    setSelectedProduct(product);
+    setErrors({});
+    setMessage(null);
+    setDialog({ type: 'form', master });
+  }
+
   function closeDialog() {
     setDialog(null);
     setForm(initialForm());
+    setSelectedProduct(null);
+    setProducts([]);
     setErrors({});
+    setMessage(null);
   }
 
-  function updateHeader(field, value) {
-    setForm((current) => ({ ...current, [field]: field === 'productCode' ? value.toUpperCase() : value }));
-    setErrors((current) => ({ ...current, [field]: '' }));
+  function updateProductName(value) {
+    setForm((current) => ({ ...current, productName: value, productCode: '' }));
+    setSelectedProduct(null);
+    setErrors((current) => ({ ...current, productName: '', productCode: '' }));
+    setMessage(null);
+  }
+
+  function chooseProduct(product) {
+    setSelectedProduct(product);
+    setForm((current) => ({ ...current, productName: product.name, productCode: product.code }));
+    setProducts([]);
+    setProductSearchError('');
+    setErrors((current) => ({ ...current, productName: '' }));
+  }
+
+  function updateEffectiveDate(value) {
+    setForm((current) => ({ ...current, effectiveDate: value }));
+    setErrors((current) => ({ ...current, effectiveDate: '' }));
     setMessage(null);
   }
 
@@ -225,9 +275,9 @@ export default function GoldRateMasterPage() {
     ));
   }
 
-  function submit(event) {
+  async function submit(event) {
     event.preventDefault();
-    const nextErrors = validate(form);
+    const nextErrors = validate(form, selectedProduct);
     setErrors(nextErrors);
     const firstError = Object.keys(nextErrors)[0];
     if (firstError) {
@@ -239,46 +289,87 @@ export default function GoldRateMasterPage() {
       return;
     }
 
-    const productCode = form.productCode.trim().toUpperCase();
-    if (masters.some((master) => master.productCode.toUpperCase() === productCode)) {
-      setErrors((current) => ({ ...current, productCode: 'A gold rate master with this product code already exists.' }));
-      document.getElementById('gr-productCode')?.focus();
+    if (masters.some((master) => master.id !== dialog.master?.id
+      && master.productCode.toUpperCase() === form.productCode.toUpperCase()
+      && master.effectiveDate === form.effectiveDate)) {
+      setErrors((current) => ({ ...current, effectiveDate: 'A gold rate master already exists for this product and date.' }));
+      document.getElementById('gr-effectiveDate')?.focus();
       return;
     }
 
-    const master = {
-      id: globalThis.crypto?.randomUUID?.() || `gold-rate-${Date.now()}`,
-      productCode,
-      effectiveDate: form.effectiveDate,
+    const payload = {
+      product_code: form.productCode.trim(),
+      product_name: form.productName.trim(),
+      effective_date: form.effectiveDate,
       rates: form.rates
         .filter((rate) => [rate.purityCarat, rate.netWeight, rate.rate, rate.marginPercent].some((value) => value.trim()))
-        .map((rate, index) => ({
-          id: index + 1,
-          purityCarat: rate.purityCarat.trim().toUpperCase(),
-          netWeight: rate.netWeight.trim(),
-          rate: rate.rate.trim(),
-          marginPercent: rate.marginPercent.trim()
+        .map((rate) => ({
+          purity_carat: rate.purityCarat.trim().toUpperCase(),
+          net_weight: Number(rate.netWeight),
+          rate: Number(rate.rate),
+          margin_percent: Number(rate.marginPercent)
         }))
     };
-    const updatedMasters = [master, ...masters];
 
+    setSaving(true);
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedMasters));
-      setMasters(updatedMasters);
+      await saveGoldRateMaster(payload, dialog.master?.id);
+      await loadMasters();
       closeDialog();
-      setMessage({ type: 'success', text: 'Gold rate master saved in this browser.' });
+      setMessage(null);
     } catch (error) {
       console.error('Unable to save gold rate master.', error);
-      setMessage({
-        type: 'error',
-        text: error instanceof Error ? `Unable to save gold rate master: ${error.message}` : 'Unable to save gold rate master.'
-      });
+      setMessage({ type: 'error', text: 'Unable to save gold rate master. Please try again.' });
+    } finally {
+      setSaving(false);
     }
   }
 
+  async function deleteMaster(master) {
+    try {
+      await deleteGoldRateMaster(master.id);
+      await loadMasters();
+      setDialog(null);
+      setMessage(null);
+    } catch (error) {
+      console.error('Unable to delete gold rate master.', error);
+      setDialog(null);
+      setMessage({ type: 'error', text: 'Unable to delete gold rate master. Please try again.' });
+    }
+  }
+
+  const filteredMasters = masters.filter((master) => (
+    [master.productName, master.productCode, master.effectiveDate]
+      .some((value) => value.toLowerCase().includes(search.trim().toLowerCase()))
+  ));
   return (
     <AppShell title="">
       <style>{styles}</style>
+      <style>{`
+        .grm-dialog{width:min(1120px,100%)}
+        .grm-fields{grid-template-columns:minmax(260px,1.3fr) minmax(190px,.8fr) minmax(220px,.9fr);max-width:1100px}
+        .grm-product-search{position:relative}
+        .grm-product-results{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:3;max-height:220px;overflow:auto;border:1px solid #b9cbca;border-radius:4px;background:#fff;box-shadow:0 6px 16px #193a621c}
+        .grm-product-result{display:flex;width:100%;justify-content:space-between;gap:12px;padding:10px;border:0;border-bottom:1px solid #edf1f0;background:#fff;color:#344d4f;text-align:left;font-size:12px}
+        .grm-product-result:last-child{border-bottom:0}
+        .grm-product-result:hover,.grm-product-result:focus{background:#f1f8f6;outline:none}
+        .grm-product-result-code{color:#176e67;font-weight:700}
+        .grm-search-row{display:flex;justify-content:flex-end;padding:12px 16px;border-bottom:1px solid #edf1f0}
+        .grm-search{display:flex;align-items:center;gap:8px;width:min(320px,100%);height:36px;padding:0 10px;border:1px solid #cbd9d7;border-radius:5px;color:#718486}
+        .grm-search input{width:100%;border:0;outline:0;color:#263d3f;font-size:12px}
+        .grm-list{min-width:1050px}
+        .grm-actions{gap:4px}
+        .grm-icon.danger:hover{border-color:#efd0d0;background:#fff5f5;color:#b33737}
+        .grm-rate-summary{display:flex;flex-wrap:wrap;gap:5px}
+        .grm-rate-chip{padding:4px 7px;border:1px solid #e1eae8;border-radius:4px;background:#f8fbfa;color:#4b6567;font-size:10px;white-space:nowrap}
+        .grm-loading{display:flex;align-items:center;justify-content:center;gap:9px}
+        .grm-spin{animation:grm-spin 1s linear infinite}
+        @keyframes grm-spin{to{transform:rotate(360deg)}}
+        .grm-icon:disabled,.grm-btn:disabled,.grm-close:disabled{opacity:.55;cursor:not-allowed}
+        .grm-field input[readonly]{background:#f1f5f4;color:#607577;cursor:default}
+        .grm-confirm{padding:22px;color:#52686a;font-size:13px;line-height:1.6}
+        @media(max-width:700px){.grm-fields{grid-template-columns:1fr}.grm-search-row{padding:10px}.grm-search{width:100%}}
+      `}</style>
       <main className="grm-wrap">
         <div className="grm-heading">
           <div style={{ marginTop: '-15px', marginBottom: '26px' }}>
@@ -303,19 +394,25 @@ export default function GoldRateMasterPage() {
         <section className="grm-directory" aria-labelledby="grm-directory-title">
           <div className="grm-directory-head">
             <h2 id="grm-directory-title">Gold rate masters</h2>
-            <span className="grm-count">{loading ? 'Loading…' : `${masters.length} ${masters.length === 1 ? 'master' : 'masters'}`}</span>
+            <span className="grm-count">{loading ? 'Loading…' : `${filteredMasters.length} ${filteredMasters.length === 1 ? 'master' : 'masters'}`}</span>
+          </div>
+          <div className="grm-search-row">
+            <label className="grm-search" htmlFor="grm-search"><Search size={16} aria-hidden="true" /><input id="grm-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search product name, code, or date" /></label>
           </div>
           <div className="grm-list-wrap">
             <table className="grm-list">
               <thead>
-                <tr><th scope="col">Product code</th><th scope="col">Effective date</th><th scope="col">Purity rates</th><th scope="col">Actions</th></tr>
+                <tr><th scope="col">Product name</th><th scope="col">Product code</th><th scope="col">Effective date</th><th scope="col">Purity and rate details</th><th scope="col">Actions</th></tr>
               </thead>
               <tbody>
-                {masters.map((master) => (
+                {filteredMasters.map((master) => (
                   <tr key={master.id}>
+                    <td>{master.productName}</td>
                     <td className="grm-code">{master.productCode}</td>
                     <td>{master.effectiveDate}</td>
-                    <td>{master.rates.length}</td>
+                    <td><div className="grm-rate-summary">{master.rates.map((rate) => (
+                      <span className="grm-rate-chip" key={rate.id}>{rate.purityCarat} · {rate.netWeight} g · {rate.rate} · {rate.marginPercent}%</span>
+                    ))}</div></td>
                     <td>
                       <div className="grm-actions">
                         <button
@@ -327,15 +424,19 @@ export default function GoldRateMasterPage() {
                         >
                           <Eye size={16} />
                         </button>
+                        <button className="grm-icon" type="button" onClick={() => openEdit(master)} aria-label={`Edit ${master.productName}`} title="Edit"><Pencil size={15} /></button>
+                        <button className="grm-icon danger" type="button" onClick={() => setDialog({ type: 'delete', master })} aria-label={`Delete ${master.productName}`} title="Delete"><Trash2 size={15} /></button>
                       </div>
                     </td>
                   </tr>
                 ))}
-                {!loading && masters.length === 0 && (
+                {loading && <tr><td className="grm-empty" colSpan="5"><span className="grm-loading"><LoaderCircle className="grm-spin" size={18} />Loading gold rate masters…</span></td></tr>}
+                {!loading && mastersError && <tr><td className="grm-empty" colSpan="5"><strong>{mastersError}</strong></td></tr>}
+                {!loading && !mastersError && filteredMasters.length === 0 && (
                   <tr>
-                    <td className="grm-empty" colSpan="4">
-                      <strong>No gold rate masters yet</strong>
-                      <span>Create a master to manage effective-dated gold rates by purity.</span>
+                    <td className="grm-empty" colSpan="5">
+                      <strong>{search ? 'No matching gold rate masters' : 'No gold rate masters yet'}</strong>
+                      {!search && <span>Create a master to manage effective-dated gold rates by purity.</span>}
                     </td>
                   </tr>
                 )}
@@ -346,36 +447,54 @@ export default function GoldRateMasterPage() {
       </main>
 
       {dialog?.type === 'form' && (
-        <div className="grm-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeDialog(); }}>
+        <div className="grm-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) closeDialog(); }}>
           <section className="grm-dialog" role="dialog" aria-modal="true" aria-labelledby="grm-form-title">
             <header className="grm-dialog-head">
-              <div><h2 id="grm-form-title">Create gold rate master</h2><p>Set the product, effective date, and rate details by purity.</p></div>
-              <button className="grm-close" type="button" onClick={closeDialog} aria-label="Close form"><X size={18} /></button>
+              <div><h2 id="grm-form-title">{dialog.master ? 'Edit gold rate master' : 'Create gold rate master'}</h2><p>Select a product, set the effective date, and define the rate details by purity.</p></div>
+              <button className="grm-close" type="button" onClick={closeDialog} disabled={saving} aria-label="Close form"><X size={18} /></button>
             </header>
             {message?.type === 'error' && <div className="grm-message error" role="alert">{message.text}</div>}
             <form className="grm-form" onSubmit={submit} noValidate>
               <div className="grm-fields">
+                <label className="grm-field" htmlFor="gr-productName">
+                  Product Name *
+                  <div className="grm-product-search">
+                    <input
+                      id="gr-productName"
+                      value={form.productName}
+                      onChange={(event) => updateProductName(event.target.value)}
+                      maxLength={100}
+                      autoComplete="off"
+                      placeholder="Search product name"
+                      aria-required="true"
+                      aria-invalid={Boolean(errors.productName)}
+                      aria-describedby={errors.productName ? 'gr-productName-error' : undefined}
+                    />
+                    {form.productName.trim() && !selectedProduct && (
+                      <div className="grm-product-results" role="region" aria-label="Product search results">
+                        {productsLoading && <div className="grm-product-result" role="status">Searching products…</div>}
+                        {!productsLoading && productSearchError && <div className="grm-product-result grm-error" role="alert">{productSearchError}</div>}
+                        {!productsLoading && !productSearchError && products.length === 0 && <div className="grm-product-result" role="status">No matching products found.</div>}
+                        {!productsLoading && products.map((product) => (
+                          <button className="grm-product-result" key={product.code} type="button" onClick={() => chooseProduct(product)}>
+                            <span>{product.name}</span><span className="grm-product-result-code">{product.code}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {errors.productName && <small className="grm-error" id="gr-productName-error">{errors.productName}</small>}
+                </label>
                 <label className="grm-field" htmlFor="gr-productCode">
                   Product Code *
-                  <input
-                    id="gr-productCode"
-                    value={form.productCode}
-                    onChange={(event) => updateHeader('productCode', event.target.value)}
-                    type="text"
-                    maxLength={20}
-                    autoComplete="off"
-                    aria-required="true"
-                    aria-invalid={Boolean(errors.productCode)}
-                    aria-describedby={errors.productCode ? 'gr-productCode-error' : undefined}
-                  />
-                  {errors.productCode && <small className="grm-error" id="gr-productCode-error">{errors.productCode}</small>}
+                  <input id="gr-productCode" value={form.productCode} readOnly aria-readonly="true" placeholder="Selected product code" />
                 </label>
                 <label className="grm-field" htmlFor="gr-effectiveDate">
                   Effective Date *
                   <input
                     id="gr-effectiveDate"
                     value={form.effectiveDate}
-                    onChange={(event) => updateHeader('effectiveDate', event.target.value)}
+                    onChange={(event) => updateEffectiveDate(event.target.value)}
                     type="date"
                     min={todayString()}
                     aria-required="true"
@@ -437,8 +556,8 @@ export default function GoldRateMasterPage() {
               {errors.rates && <p className="grm-error" role="alert">{errors.rates}</p>}
               <div className="grm-tools"><button className="grm-add" type="button" onClick={addRate}><CirclePlus size={15} /> Add purity rate</button></div>
               <div className="grm-actions-footer">
-                <button className="grm-btn" type="button" onClick={closeDialog}>Cancel</button>
-                <button className="grm-btn grm-submit" type="submit"><Save size={15} /> Create master</button>
+                <button className="grm-btn" type="button" onClick={closeDialog} disabled={saving}>Cancel</button>
+                <button className="grm-btn grm-submit" type="submit" disabled={saving}>{saving ? <LoaderCircle className="grm-spin" size={15} /> : <Save size={15} />}{saving ? 'Saving…' : dialog.master ? 'Save changes' : 'Create master'}</button>
               </div>
             </form>
           </section>
@@ -449,7 +568,7 @@ export default function GoldRateMasterPage() {
         <div className="grm-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDialog(null); }}>
           <section className="grm-dialog" role="dialog" aria-modal="true" aria-labelledby="grm-view-title">
             <header className="grm-dialog-head">
-              <div><h2 id="grm-view-title">{dialog.master.productCode}</h2><p>Effective {dialog.master.effectiveDate}</p></div>
+              <div><h2 id="grm-view-title">{dialog.master.productName}</h2><p>{dialog.master.productCode} · Effective {dialog.master.effectiveDate}</p></div>
               <button className="grm-close" type="button" onClick={() => setDialog(null)} aria-label="Close details"><X size={18} /></button>
             </header>
             <div className="grm-tier-view">
@@ -466,6 +585,22 @@ export default function GoldRateMasterPage() {
               </table>
             </div>
             <footer className="grm-dialog-footer"><button className="grm-btn" type="button" onClick={() => setDialog(null)}>Close</button></footer>
+          </section>
+        </div>
+      )}
+
+      {dialog?.type === 'delete' && (
+        <div className="grm-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDialog(null); }}>
+          <section className="grm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="grm-delete-title">
+            <header className="grm-dialog-head">
+              <div><h2 id="grm-delete-title">Delete gold rate master?</h2><p>This action cannot be undone.</p></div>
+              <button className="grm-close" type="button" onClick={() => setDialog(null)} aria-label="Close confirmation"><X size={18} /></button>
+            </header>
+            <div className="grm-confirm">{dialog.master.productName} ({dialog.master.productCode}) · Effective {dialog.master.effectiveDate}</div>
+            <footer className="grm-dialog-footer">
+              <button className="grm-btn" type="button" onClick={() => setDialog(null)}>Cancel</button>
+              <button className="grm-btn grm-submit" type="button" onClick={() => deleteMaster(dialog.master)}>Delete master</button>
+            </footer>
           </section>
         </div>
       )}
