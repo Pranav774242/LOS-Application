@@ -178,7 +178,11 @@ export default function AppShell({ children, title }) {
           onLogout={handleLogout}
         />
         <div className="los-workspace">
-          <Header menuOpen={sidebarOpen} onMenu={() => setSidebarOpen((open) => !open)} />
+          <Header
+            menuOpen={sidebarOpen}
+            onMenu={() => setSidebarOpen((open) => !open)}
+            role={currentRole}
+          />
           <main className="main-content los-main-content">
             <div className="page-wrap los-page-wrap">
               {!accessReady ? (

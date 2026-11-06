@@ -142,6 +142,25 @@ function getVisibleRoute(role, item) {
   return !permission || hasRolePermission(role, ...permission);
 }
 
+export function getSidebarSearchItems(role) {
+  return NAV.flatMap((item) => {
+    if (item.type === 'link') {
+      return getVisibleRoute(role, item)
+        ? [{ label: item.label, href: item.href, section: '', icon: item.icon }]
+        : [];
+    }
+
+    return item.children
+      .filter((child) => child.href && !child.disabled && getVisibleRoute(role, child))
+      .map((child) => ({
+        label: child.label,
+        href: child.href,
+        section: item.label,
+        icon: child.icon,
+      }));
+  });
+}
+
 function getItemPath(item) {
   return item.href?.split('?')[0];
 }
