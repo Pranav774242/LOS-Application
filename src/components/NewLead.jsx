@@ -94,6 +94,86 @@ const includeCurrentOption = (options, value) => (
   value && !options.includes(value) ? [value, ...options] : options
 );
 const isBasicAadhaarNumber = (value) => /^[0-9]{12}$/.test(value);
+const EMAIL_PATTERN = '[^\\s@]+@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}';
+const nameHasValidCharacters = (value) => /^[\p{L}\p{M}]+(?: [\p{L}\p{M}]+)*$/u.test(value);
+const normalizeTitle = (title) => {
+  const value = String(title || '').trim();
+  const normalizedTitle = value.toLowerCase().replace(/\.$/, '');
+  return { mr: 'Mr.', ms: 'Ms.', mrs: 'Mrs.' }[normalizedTitle] || value;
+};
+const titleGender = (title) => {
+  const normalizedTitle = String(title || '').trim().toLowerCase().replace(/\.$/, '');
+  if (normalizedTitle === 'mr') return 'Male';
+  if (['ms', 'mrs', 'miss'].includes(normalizedTitle)) return 'Female';
+  return '';
+};
+const creditFacilityFields = {
+  existingBankCreditFacilities: [
+    ['accountNumber', 'Account Number'],
+    ['loanType', 'Loan Type'],
+    ['limit', 'Limit'],
+    ['emi', 'EMI'],
+    ['outstanding', 'Outstanding'],
+    ['dpd', 'DPD'],
+    ['accountStatus', 'A/c Status'],
+  ],
+  otherBankCreditFacilities: [
+    ['bankName', 'Bank Name'],
+    ['accountNumber', 'Account Number'],
+    ['loanType', 'Loan Type'],
+    ['limit', 'Limit'],
+    ['emi', 'EMI'],
+    ['outstanding', 'Outstanding'],
+  ],
+};
+const addressFields = [
+  ['addressType', 'Address Type'],
+  ['flatBuildingName', 'Flat / Building'],
+  ['streetRoad', 'Street / Road'],
+  ['landmark', 'Landmark'],
+  ['city', 'City'],
+  ['state', 'State'],
+  ['pinCode', 'PIN Code'],
+];
+const numericCreditFacilityFields = new Set(['limit', 'emi', 'outstanding', 'dpd']);
+const getCreditFacilityError = (collection, facility) => {
+  const missing = creditFacilityFields[collection]
+    .filter(([field]) => !String(facility[field] ?? '').trim())
+    .map(([, label]) => label);
+  const invalidNumbers = creditFacilityFields[collection]
+    .filter(([field]) => numericCreditFacilityFields.has(field))
+    .filter(([field]) => {
+      const value = String(facility[field] ?? '').trim();
+      const numberPattern = field === 'dpd' ? /^\d+$/ : /^\d+(?:\.\d{1,2})?$/;
+      return value && (!numberPattern.test(value) || !Number.isFinite(Number(value)));
+    })
+    .map(([, label]) => label);
+
+  if (!missing.length && !invalidNumbers.length) return '';
+  return [
+    missing.length ? `Complete ${missing.join(', ')}.` : '',
+    invalidNumbers.length ? `Enter valid non-negative numbers for ${invalidNumbers.join(', ')}.` : '',
+  ].filter(Boolean).join(' ');
+};
+const getAddressError = (address) => {
+  return addressFields
+    .map(([field, label]) => getAddressFieldError(field, address[field], label))
+    .filter(Boolean)
+    .join(' ');
+};
+const getAddressFieldError = (field, value, label) => {
+  const text = String(value ?? '').trim();
+  if (!text) return `${label} is required.`;
+  if (field === 'pinCode' && !/^\d{6}$/.test(text)) return 'Enter a valid 6-digit PIN code.';
+  if (['city', 'state', 'addressType'].includes(field) && !/^[\p{L}\p{M}]+(?:[ .'-][\p{L}\p{M}]+)*$/u.test(text)) {
+    return `Enter a valid ${label.toLowerCase()} using letters, spaces, hyphens, or apostrophes.`;
+  }
+  if (['flatBuildingName', 'streetRoad', 'landmark'].includes(field) && !/^[\p{L}\p{M}0-9]+(?:[ .,'#/-][\p{L}\p{M}0-9]+)*$/u.test(text)) {
+    return `Enter a valid ${label.toLowerCase()}.`;
+  }
+  if (text.length > (field === 'streetRoad' ? 150 : 100)) return `${label} must be no more than ${field === 'streetRoad' ? 150 : 100} characters.`;
+  return '';
+};
 const createAddressDetailsRow = () => ({
   addressType: '',
   flatBuildingName: '',
@@ -148,6 +228,7 @@ const initialForm = {
   loanAmount: '',
   interestRate: '',
   loanPurpose: '',
+  otherLoanPurpose: '',
   securityAmount: '',
   tenure: '',
   tenureUnit: 'month',
@@ -182,10 +263,17 @@ const initialForm = {
 const getLeadFormValues = (lead) => {
   if (!lead) return initialForm;
 
-  const nameParts = String(lead.customerName || lead.name || '').trim().split(/\s+/).filter(Boolean);
+  const rawNameParts = String(lead.customerName || lead.name || '').trim().split(/\s+/).filter(Boolean);
+  const inferredTitle = /^(mr\.?|mrs\.?|ms\.?|miss|dr\.?)$/i.test(rawNameParts[0] || '') ? rawNameParts[0] : '';
+  const title = normalizeTitle(lead.namePrefix || lead.title || inferredTitle);
+  const nameParts = inferredTitle && !lead.namePrefix && !lead.title ? rawNameParts.slice(1) : rawNameParts;
+  const loanPurposeValue = lead.loanPurpose || lead.purposeOfLoan || '';
+  const standardLoanPurposes = ['Home purchase', 'Home renovation', 'Medical expenses', 'Education', 'Business expansion', 'Debt consolidation', 'Vehicle purchase', 'Other'];
   return {
     ...initialForm,
     ...lead,
+    namePrefix: title,
+    gender: titleGender(title) || lead.gender || '',
     firstName: lead.firstName || nameParts[0] || '',
     middleName: lead.middleName || (nameParts.length > 2 ? nameParts.slice(1, -1).join(' ') : ''),
     lastName: lead.lastName || (nameParts.length > 1 ? nameParts[nameParts.length - 1] : ''),
@@ -201,7 +289,9 @@ const getLeadFormValues = (lead) => {
     dependents: lead.dependents ?? lead.numberOfDependents ?? '',
     loanProductType: lead.loanProductType || lead.product || '',
     loanAmount: lead.loanAmount || String(lead.amount || '').replace(/,/g, ''),
-    loanPurpose: lead.loanPurpose || lead.purposeOfLoan || '',
+    loanPurpose: standardLoanPurposes.includes(loanPurposeValue) ? loanPurposeValue : loanPurposeValue ? 'Other' : '',
+    otherLoanPurpose: lead.otherLoanPurpose || (loanPurposeValue && !standardLoanPurposes.includes(loanPurposeValue) ? loanPurposeValue : ''),
+    employmentType: lead.employmentType === 'Employee' ? 'Salaried' : lead.employmentType || '',
     instalments: lead.instalments ?? lead.numberOfInstalments ?? '',
     monthlyEmi: lead.monthlyEmi ?? lead.emi ?? '',
     collateral: lead.collateral ?? lead.downPaymentCollateral ?? '',
@@ -258,6 +348,8 @@ const newLeadInlineStyles = `
 .lead-full-page .lead-personal-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:start;gap:15px 16px}
 .lead-full-page .lead-name-combo{display:grid;grid-template-columns:76px minmax(0,1fr);align-items:end;gap:8px;min-width:0}
 .lead-full-page .lead-personal-demographics{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(72px,.42fr) minmax(0,1fr);gap:15px;width:min(100%,780px)}
+.lead-full-page .lead-personal-demographics .lead-calendar-picker .lead-date-picker-trigger{box-sizing:border-box;width:100%;height:48px;min-height:48px;padding:0 14px;border:1px solid #d7e1e4;border-radius:8px;background:#f8fbfc;color:#1d3b48;font:inherit;font-size:13px}
+.lead-full-page .lead-personal-demographics .lead-calendar-picker .lead-date-picker-trigger:focus-visible{border-color:#7ea2d9;outline:none;box-shadow:0 0 0 4px rgba(80,130,216,.08)}
 .lead-full-page .lead-personal-actions{grid-column:1/-1;display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px}
 .lead-full-page .lead-field{display:flex;min-width:0;flex-direction:column;gap:6px;color:#3a5557;font-size:10px;font-weight:700}
 .lead-full-page .lead-field span em{color:#bb4646;font-style:normal}
@@ -267,7 +359,7 @@ const newLeadInlineStyles = `
 .lead-full-page .lead-step-panel input[aria-invalid=true]{border-color:#bd4848;background:#fffafa}
 .lead-full-page .lead-step-panel input[readonly]{background:#f4f7f6;color:#66797a}
 .lead-full-page .lead-computed-field{background:#f4f7f6!important}
-.lead-full-page .lead-personal-demographics input{height:37px}
+.lead-full-page .lead-personal-demographics input{height:48px}
 .lead-full-page .lead-personal-actions button,.lead-full-page .lead-verify-button,.lead-full-page .lead-otp-verify,.lead-full-page .lead-income-consent{display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:0 11px;border:1px solid #cbded9;border-radius:5px;background:#f3f8f6;color:#226b62;font-size:10px;font-weight:700;cursor:pointer}
 .lead-full-page .lead-personal-actions button:hover,.lead-full-page .lead-verify-button:hover,.lead-full-page .lead-otp-verify:hover,.lead-full-page .lead-income-consent:hover{background:#e7f2ee}
 .lead-full-page .lead-mobile-field,.lead-full-page .lead-identity-field,.lead-full-page .lead-otp-field{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:8px;min-width:0}
@@ -316,7 +408,7 @@ const newLeadInlineStyles = `
 @media(max-width:480px){.lead-full-page .lead-personal-grid,.lead-full-page .lead-referral-grid,.lead-full-page .lead-income-grid,.lead-full-page .lead-address-row{grid-template-columns:1fr}.lead-full-page .lead-name-combo{grid-template-columns:70px minmax(0,1fr)}.lead-full-page .lead-personal-demographics{grid-template-columns:1fr;width:100%}.lead-full-page .lead-personal-demographics,.lead-full-page .lead-identity-field{grid-column:1}.lead-full-page .lead-personal-actions{grid-column:1;justify-content:stretch}.lead-full-page .lead-personal-actions button{flex:1}.lead-full-page .lead-income-grid .lead-income-employer{grid-column:auto}.lead-full-page .lead-modal-footer{flex-wrap:wrap}.lead-full-page .lead-save-btn,.lead-full-page .lead-previous-btn{flex:1}.lead-full-page .lead-mobile-field,.lead-full-page .lead-identity-field,.lead-full-page .lead-otp-field{grid-template-columns:1fr}.lead-full-page .lead-verify-button,.lead-full-page .lead-otp-verify{width:100%}}
 `;
 
-export default function NewLead({ open, onClose, onCreate, onUpdate, initialData = null }) {
+export default function NewLead({ open, onClose, onCreate, onUpdate, onNotify, initialData = null }) {
   const [form, setForm] = useState(initialForm);
   const [activeStep, setActiveStep] = useState(0);
   const [otpMessage, setOtpMessage] = useState('');
@@ -328,6 +420,10 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState('');
   const [downPaymentMessage, setDownPaymentMessage] = useState('');
+  const [creditFacilityErrors, setCreditFacilityErrors] = useState({});
+  const [touchedFields, setTouchedFields] = useState({});
+  const [showValidationErrors, setShowValidationErrors] = useState(false);
+  const [inputFeedback, setInputFeedback] = useState({});
 
   useEffect(() => {
     if (!open) return undefined;
@@ -340,6 +436,10 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
     setAadhaarValidated(false);
     setSubmissionError('');
     setDownPaymentMessage('');
+    setCreditFacilityErrors({});
+    setTouchedFields({});
+    setShowValidationErrors(false);
+    setInputFeedback({});
     setIsSubmitting(false);
     const controller = new AbortController();
     setProductsLoading(true);
@@ -392,6 +492,76 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
     && Number(form.collateral) >= Number(form.loanAmount);
   const downPaymentError = downPaymentMessage || (downPaymentExceedsLoan ? 'Down payment below the loan amount.' : '');
 
+  const getFieldValidationMessage = (name, value) => {
+    const text = String(value ?? '');
+    if (name === 'dateOfBirth' && !text) return 'Date of Birth is required.';
+    if (['firstName', 'middleName', 'lastName', 'designation'].includes(name)) {
+      if (!text.trim()) return ['firstName', 'lastName'].includes(name) ? 'This field is required.' : '';
+      const letterCount = Array.from(text).filter((character) => /\p{L}/u.test(character)).length;
+      if (letterCount < 3 || text.length > 50 || !nameHasValidCharacters(text)) {
+        return 'Use 3-50 alphabetic characters; single spaces between words are allowed.';
+      }
+    }
+    if (name === 'mobileNumber' && !/^[6-9]\d{9}$/.test(text)) {
+      return 'Enter a 10-digit mobile number starting with 6, 7, 8, or 9.';
+    }
+    if (['email', 'empEmailId'].includes(name) && text && !new RegExp(`^(?:${EMAIL_PATTERN})$`).test(text)) {
+      return 'Enter a valid email address with a complete domain.';
+    }
+    if (name === 'loanAmount' && text && (!/^\d{1,12}$/.test(text) || Number(text) <= 0)) {
+      return 'Enter a positive loan amount of up to 12 digits.';
+    }
+    if (name === 'interestRate' && text
+      && (!/^(?:\d+(?:\.\d{1,2})?|\.\d{1,2})$/.test(text) || Number(text) < 0 || Number(text) > 100)) {
+      return 'Enter an interest rate from 0 to 100 with up to 2 decimal places.';
+    }
+    if (name === 'otherLoanPurpose' && form.loanPurpose === 'Other' && !text.trim()) {
+      return 'Enter the specific purpose of the loan.';
+    }
+    if (name === 'yearsOfService' && text && (!/^\d+(?:\.\d)?$/.test(text) || Number(text) < 0)) {
+      return 'Enter a valid non-negative number of years.';
+    }
+    if (name === 'annualIncome' && text && (!/^\d+(?:\.\d{1,2})?$/.test(text) || Number(text) <= 0)) {
+      return 'Enter a positive gross income.';
+    }
+    if (name === 'takeHomePay' && text && (!/^\d+(?:\.\d{1,2})?$/.test(text) || Number(text) < 0)) {
+      return 'Enter a valid non-negative net income.';
+    }
+    if (['occupation', 'employerType', 'employerName'].includes(name) && text
+      && (text.length < 3 || text.length > 100 || !nameHasValidCharacters(text))) {
+      return 'Use 3-100 alphabetic characters; single spaces between words are allowed.';
+    }
+    return '';
+  };
+  const shouldShowFieldError = (name) => showValidationErrors || Boolean(touchedFields[name]);
+  const getVisibleFieldError = (name, value) => (
+    shouldShowFieldError(name) ? getFieldValidationMessage(name, value) : ''
+  );
+  const getVisibleAddressError = (index, field, value, label) => (
+    shouldShowFieldError(`addressDetails.${index}.${field}`)
+      ? getAddressFieldError(field, value, label)
+      : ''
+  );
+  const updateAddressField = (index, field, value) => {
+    let normalizedValue;
+    if (field === 'pinCode') {
+      normalizedValue = value.replace(/\D/g, '').slice(0, 6);
+    } else {
+      const allowedPattern = ['city', 'state', 'addressType'].includes(field)
+        ? /[^\p{L}\p{M} .'-]/gu
+        : /[^\p{L}\p{M}0-9 .,'#/-]/gu;
+      const maxLength = field === 'streetRoad' ? 150 : 100;
+      normalizedValue = value.replace(allowedPattern, '').replace(/ {2,}/g, ' ').replace(/^ +/, '').slice(0, maxLength);
+    }
+
+    const feedbackKey = `addressDetails.${index}.${field}`;
+    setInputFeedback((current) => ({
+      ...current,
+      [feedbackKey]: normalizedValue !== value ? 'Remove unsupported characters from this field.' : '',
+    }));
+    updateRow('addressDetails', index, field, normalizedValue);
+  };
+
   const updateRow = (collection, index, field, value) => {
     setForm((current) => ({
       ...current,
@@ -399,8 +569,23 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
         rowIndex === index ? { ...row, [field]: value } : row
       )),
     }));
+    setTouchedFields((current) => ({ ...current, [`${collection}.${index}.${field}`]: true }));
+    if (creditFacilityFields[collection]) {
+      setCreditFacilityErrors((current) => ({ ...current, [collection]: '' }));
+    }
   };
   const addAddressDetails = () => {
+    const firstInvalidAddress = form.addressDetails.findIndex((address) => getAddressError(address));
+    if (firstInvalidAddress >= 0) {
+      setShowValidationErrors(true);
+      const invalidAddress = form.addressDetails[firstInvalidAddress];
+      const fieldIndex = addressFields.findIndex(([key, label]) => getAddressFieldError(key, invalidAddress[key], label));
+      document.querySelectorAll('.lead-address-row')[firstInvalidAddress]?.querySelectorAll('input')[fieldIndex]?.focus();
+      return;
+    }
+
+    setShowValidationErrors(false);
+    setTouchedFields({});
     setForm((current) => ({
       ...current,
       addressDetails: [...current.addressDetails, createAddressDetailsRow()],
@@ -411,8 +596,22 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
       ...current,
       [collection]: current[collection].filter((_, rowIndex) => rowIndex !== index),
     }));
+    if (creditFacilityFields[collection]) {
+      setCreditFacilityErrors((current) => ({ ...current, [collection]: '' }));
+    }
   };
   const addCreditFacility = (collection) => {
+    const facilities = form[collection];
+    const invalidIndex = facilities.findIndex((facility) => getCreditFacilityError(collection, facility));
+    if (invalidIndex >= 0) {
+      setCreditFacilityErrors((current) => ({
+        ...current,
+        [collection]: `Facility ${invalidIndex + 1}: ${getCreditFacilityError(collection, facilities[invalidIndex])}`,
+      }));
+      return;
+    }
+
+    setCreditFacilityErrors((current) => ({ ...current, [collection]: '' }));
     setForm((current) => ({
       ...current,
       [collection]: [...current[collection], createCreditFacilityRow()],
@@ -421,10 +620,23 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
 
   const handleChange = (event) => {
     const { name, value } = event.target;
+    const nameFields = ['firstName', 'middleName', 'lastName', 'designation', 'occupation', 'employerType', 'employerName'];
+    const sanitizedText = nameFields.includes(name)
+      ? value.replace(/[^\p{L}\p{M} ]/gu, '').replace(/ {2,}/g, ' ').replace(/^ +/, '').slice(0, 100)
+      : value;
     const normalizedValue = name === 'aadhaarCard' || name === 'otpNumber'
       ? value.replace(/\D/g, '').slice(0, name === 'aadhaarCard' ? 12 : 6)
-      : name === 'mobileNumber' ? value.replace(/\D/g, '').slice(0, 10)
-      : ['firstName', 'middleName', 'lastName'].includes(name) ? value.replace(/[^\p{L}\p{M} .'-]/gu, '').slice(0, 100)
+      : name === 'mobileNumber' ? value.replace(/\D/g, '').replace(/^[0-5]+/, '').slice(0, 10)
+      : ['firstName', 'middleName', 'lastName', 'designation'].includes(name) ? sanitizedText.slice(0, 50)
+      : ['occupation', 'employerType', 'employerName'].includes(name) ? sanitizedText
+      : name === 'loanAmount' ? value.includes('-') ? '' : value.replace(/\D/g, '').slice(0, 12)
+      : ['interestRate', 'yearsOfService', 'annualIncome', 'takeHomePay'].includes(name) ? (() => {
+        if (value.includes('-')) return '';
+        const numeric = value.replace(/[^\d.]/g, '');
+        const [whole, ...fraction] = numeric.split('.');
+        const decimalPlaces = name === 'yearsOfService' ? 1 : 2;
+        return `${whole}${fraction.length ? `.${fraction.join('').slice(0, decimalPlaces)}` : ''}`;
+      })()
       : name === 'panCard' ? normalizePan(value)
       : name === 'passportNo' ? value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) : value;
 
@@ -453,11 +665,26 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
         ? { referralDate: '', partnerId: '', partnerName: '', employeeId: '', employeeName: '' }
         : {}),
       ...(name === 'employmentType' && value === 'Self-Employed' ? { designation: '' } : {}),
+      ...(name === 'loanPurpose' && normalizedValue !== 'Other' ? { otherLoanPurpose: '' } : {}),
+      ...(name === 'namePrefix' && titleGender(normalizedValue) ? { gender: titleGender(normalizedValue) } : {}),
+      ...(name === 'gender' && titleGender(form.namePrefix) && titleGender(form.namePrefix) !== normalizedValue
+        ? { namePrefix: normalizedValue === 'Male' ? 'Mr.' : normalizedValue === 'Female' ? 'Ms.' : 'Other' }
+        : {}),
       ...(name === 'loanProductType'
         ? { interestRate: String(loanProducts.find((product) => product.name === value)?.annualInterestRate ?? '') }
         : {}),
       ...(name === 'aadhaarCard' ? { otpSent: false, otpNumber: '' } : {}),
     }));
+    setTouchedFields((current) => ({ ...current, [name]: true }));
+    setInputFeedback((current) => ({
+      ...current,
+      [name]: nameFields.includes(name) && sanitizedText !== value
+        ? 'Use alphabetic characters and spaces only.'
+        : '',
+    }));
+    if (typeof event.target.setCustomValidity === 'function') {
+      event.target.setCustomValidity(getFieldValidationMessage(name, normalizedValue));
+    }
     if (name === 'aadhaarCard') {
       setAadhaarValidated(false);
       setOtpMessage('');
@@ -468,6 +695,7 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
           : '12-digit Aadhaar number format is valid. Identity verification still requires an authorized service.');
     }
     if (name === 'mobileNumber') setMobileMessage('');
+    setSubmissionError('');
   };
 
   const resetAndClose = (force = false) => {
@@ -485,6 +713,19 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
   };
 
   const validateStep = () => {
+    setShowValidationErrors(true);
+
+    if (activeStep === 1) {
+      if (!form.addressDetails.length) return false;
+      const invalidAddressIndex = form.addressDetails.findIndex((address) => getAddressError(address));
+      if (invalidAddressIndex >= 0) {
+        const invalidAddress = form.addressDetails[invalidAddressIndex];
+        const fieldIndex = addressFields.findIndex(([key, label]) => getAddressFieldError(key, invalidAddress[key], label));
+        document.querySelectorAll('.lead-address-row')[invalidAddressIndex]?.querySelectorAll('input')[fieldIndex]?.focus();
+        return false;
+      }
+    }
+
     if (activeStep === 2) {
       const collateralField = document.querySelector('.lead-step-panel input[name="collateral"]');
       const amount = Number(form.loanAmount);
@@ -512,6 +753,11 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
     }
 
     const fields = Array.from(document.querySelectorAll('.lead-step-panel input, .lead-step-panel select'));
+    fields.forEach((field) => {
+      if (field.name !== 'aadhaarCard') {
+        field.setCustomValidity(getFieldValidationMessage(field.name, field.value));
+      }
+    });
     const invalidField = fields.find((field) => field.willValidate && !field.checkValidity());
 
     if (invalidField) {
@@ -521,7 +767,6 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
     }
 
     if (activeStep === 0 && !form.dateOfBirth) {
-      setSubmissionError('Date of Birth is required.');
       document.querySelector('[data-date-picker-trigger="dateOfBirth"]')?.focus();
       return false;
     }
@@ -530,7 +775,11 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
   };
 
   const handleNext = () => {
-    if (validateStep()) setActiveStep((current) => current + 1);
+    if (validateStep()) {
+      setShowValidationErrors(false);
+      setTouchedFields({});
+      setActiveStep((current) => current + 1);
+    }
   };
 
   const handleValidateAndSendOtp = () => {
@@ -586,24 +835,27 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
     <div className="lead-personal-grid">
       <div className="lead-name-combo">
         <label className="lead-field lead-prefix-field">
-          <span>Title</span>
-          <select name="namePrefix" value={form.namePrefix} onChange={handleChange}>
-      <option value=""></option>
-            {includeCurrentOption(['Ms', 'Mrs', 'Miss', 'Dr', 'Other'], form.namePrefix).map((title) => <option key={title} value={title}>{title}</option>)}
+          <span>Title <em>*</em></span>
+          <select name="namePrefix" value={form.namePrefix} onChange={handleChange} required>
+            <option value="">Select</option>
+            {includeCurrentOption(['Mr.', 'Ms.', 'Mrs.', 'Miss', 'Dr', 'Other'], form.namePrefix).map((title) => <option key={title} value={title}>{title}</option>)}
           </select>
         </label>
         <label className="lead-field">
           <span>First Name <em>*</em></span>
-          <input name="firstName" value={form.firstName} onChange={handleChange} required maxLength={100} autoComplete="given-name" />
+          <input name="firstName" value={form.firstName} onChange={handleChange} onBlur={() => setTouchedFields((current) => ({ ...current, firstName: true }))} required minLength={3} maxLength={50} autoComplete="given-name" title="Use 3-50 alphabetic characters; single spaces between words are allowed." aria-invalid={Boolean(getVisibleFieldError('firstName', form.firstName))} />
+          {getVisibleFieldError('firstName', form.firstName) ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getVisibleFieldError('firstName', form.firstName)}</p> : null}
         </label>
       </div>
       <label className="lead-field">
         <span>Middle Name</span>
-        <input name="middleName" value={form.middleName} onChange={handleChange} maxLength={100} autoComplete="additional-name" />
+        <input name="middleName" value={form.middleName} onChange={handleChange} minLength={3} maxLength={50} autoComplete="additional-name" title="Use 3-50 alphabetic characters; single spaces between words are allowed." aria-invalid={Boolean(getVisibleFieldError('middleName', form.middleName))} />
+        {getVisibleFieldError('middleName', form.middleName) ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getVisibleFieldError('middleName', form.middleName)}</p> : null}
       </label>
       <label className="lead-field">
         <span>Last Name <em>*</em></span>
-        <input name="lastName" value={form.lastName} onChange={handleChange} required maxLength={100} autoComplete="family-name" />
+        <input name="lastName" value={form.lastName} onChange={handleChange} onBlur={() => setTouchedFields((current) => ({ ...current, lastName: true }))} required minLength={3} maxLength={50} autoComplete="family-name" title="Use 3-50 alphabetic characters; single spaces between words are allowed." aria-invalid={Boolean(getVisibleFieldError('lastName', form.lastName))} />
+        {getVisibleFieldError('lastName', form.lastName) ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getVisibleFieldError('lastName', form.lastName)}</p> : null}
       </label>
 
       <div className="lead-personal-actions">
@@ -616,7 +868,7 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
       </div>
 
       <div className="lead-personal-demographics">
-        <label className="lead-field">
+        <label className="lead-field" onClick={() => setTouchedFields((current) => ({ ...current, dateOfBirth: true }))}>
           <span>Date of Birth <em>*</em></span>
           <LeadDatePicker
             id="lead-date-of-birth"
@@ -630,6 +882,7 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
             max={todayInputDate}
             required
           />
+          {getVisibleFieldError('dateOfBirth', form.dateOfBirth) ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getVisibleFieldError('dateOfBirth', form.dateOfBirth)}</p> : null}
         </label>
         <label className="lead-field">
           <span>Age</span>
@@ -644,15 +897,17 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
       <div className="lead-mobile-field">
         <label className="lead-field">
           <span>Mobile Number <em>*</em></span>
-          <input name="mobileNumber" type="tel" value={form.mobileNumber} onChange={handleChange} inputMode="numeric" autoComplete="tel-national" pattern="[6-9][0-9]{9}" maxLength={10} required title="Enter a 10-digit mobile number starting with 6-9." />
+          <input name="mobileNumber" type="tel" value={form.mobileNumber} onChange={handleChange} inputMode="numeric" autoComplete="tel-national" pattern="[6-9][0-9]{9}" maxLength={10} required title="Enter a 10-digit mobile number starting with 6, 7, 8, or 9." aria-invalid={Boolean(getVisibleFieldError('mobileNumber', form.mobileNumber))} />
         </label>
         <button type="button" className="lead-verify-button" onClick={handleVerifyMobile}>Verify Mobile</button>
         {mobileMessage ? <p role="status" className="lead-mobile-message">{mobileMessage}</p> : null}
+        {getVisibleFieldError('mobileNumber', form.mobileNumber) ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getVisibleFieldError('mobileNumber', form.mobileNumber)}</p> : null}
       </div>
 
       <label className="lead-field">
         <span>Email ID</span>
-        <input name="email" type="email" value={form.email} onChange={handleChange} maxLength={254} autoComplete="email" />
+        <input name="email" type="email" value={form.email} onChange={handleChange} maxLength={254} pattern={EMAIL_PATTERN} autoComplete="email" title="Enter a valid email address with a complete domain." aria-invalid={Boolean(form.email && getFieldValidationMessage('email', form.email))} />
+        {form.email && getFieldValidationMessage('email', form.email) ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getFieldValidationMessage('email', form.email)}</p> : null}
       </label>
 
       <label className="lead-field">
@@ -750,36 +1005,44 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
             <Plus size={14} /> Add Address Details
           </button>
         </div>
+        {showValidationErrors && !form.addressDetails.length ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">Add at least one complete address before continuing.</p> : null}
         <div className="lead-address-rows">
           {form.addressDetails.map((address, index) => (
             <div className="lead-address-row" key={index}>
               <label className="lead-field">
-                <span>Address Type</span>
-                <input aria-label={`Address ${index + 1} type`} value={address.addressType} onChange={(event) => updateRow('addressDetails', index, 'addressType', event.target.value)} />
+                <span>Address Type <em>*</em></span>
+                <input aria-label={`Address ${index + 1} type`} value={address.addressType} onChange={(event) => updateAddressField(index, 'addressType', event.target.value)} onBlur={() => setTouchedFields((current) => ({ ...current, [`addressDetails.${index}.addressType`]: true }))} maxLength={100} required aria-invalid={Boolean(getVisibleAddressError(index, 'addressType', address.addressType, 'Address Type'))} />
+                {getVisibleAddressError(index, 'addressType', address.addressType, 'Address Type') || inputFeedback[`addressDetails.${index}.addressType`] ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getVisibleAddressError(index, 'addressType', address.addressType, 'Address Type') || inputFeedback[`addressDetails.${index}.addressType`]}</p> : null}
               </label>
               <label className="lead-field">
-                <span>Flat / Building</span>
-                <input aria-label={`Address ${index + 1} flat or building`} value={address.flatBuildingName} onChange={(event) => updateRow('addressDetails', index, 'flatBuildingName', event.target.value)} />
+                <span>Flat / Building <em>*</em></span>
+                <input aria-label={`Address ${index + 1} flat or building`} value={address.flatBuildingName} onChange={(event) => updateAddressField(index, 'flatBuildingName', event.target.value)} onBlur={() => setTouchedFields((current) => ({ ...current, [`addressDetails.${index}.flatBuildingName`]: true }))} maxLength={100} required aria-invalid={Boolean(getVisibleAddressError(index, 'flatBuildingName', address.flatBuildingName, 'Flat / Building'))} />
+                {getVisibleAddressError(index, 'flatBuildingName', address.flatBuildingName, 'Flat / Building') || inputFeedback[`addressDetails.${index}.flatBuildingName`] ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getVisibleAddressError(index, 'flatBuildingName', address.flatBuildingName, 'Flat / Building') || inputFeedback[`addressDetails.${index}.flatBuildingName`]}</p> : null}
               </label>
               <label className="lead-field lead-address-street">
-                <span>Street / Road</span>
-                <input aria-label={`Address ${index + 1} street or road`} value={address.streetRoad} onChange={(event) => updateRow('addressDetails', index, 'streetRoad', event.target.value)} />
+                <span>Street / Road <em>*</em></span>
+                <input aria-label={`Address ${index + 1} street or road`} value={address.streetRoad} onChange={(event) => updateAddressField(index, 'streetRoad', event.target.value)} onBlur={() => setTouchedFields((current) => ({ ...current, [`addressDetails.${index}.streetRoad`]: true }))} maxLength={150} required aria-invalid={Boolean(getVisibleAddressError(index, 'streetRoad', address.streetRoad, 'Street / Road'))} />
+                {getVisibleAddressError(index, 'streetRoad', address.streetRoad, 'Street / Road') || inputFeedback[`addressDetails.${index}.streetRoad`] ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getVisibleAddressError(index, 'streetRoad', address.streetRoad, 'Street / Road') || inputFeedback[`addressDetails.${index}.streetRoad`]}</p> : null}
               </label>
               <label className="lead-field">
-                <span>Landmark</span>
-                <input aria-label={`Address ${index + 1} landmark`} value={address.landmark} onChange={(event) => updateRow('addressDetails', index, 'landmark', event.target.value)} />
+                <span>Landmark <em>*</em></span>
+                <input aria-label={`Address ${index + 1} landmark`} value={address.landmark} onChange={(event) => updateAddressField(index, 'landmark', event.target.value)} onBlur={() => setTouchedFields((current) => ({ ...current, [`addressDetails.${index}.landmark`]: true }))} maxLength={100} required aria-invalid={Boolean(getVisibleAddressError(index, 'landmark', address.landmark, 'Landmark'))} />
+                {getVisibleAddressError(index, 'landmark', address.landmark, 'Landmark') || inputFeedback[`addressDetails.${index}.landmark`] ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getVisibleAddressError(index, 'landmark', address.landmark, 'Landmark') || inputFeedback[`addressDetails.${index}.landmark`]}</p> : null}
               </label>
               <label className="lead-field">
-                <span>City</span>
-                <input aria-label={`Address ${index + 1} city`} value={address.city} onChange={(event) => updateRow('addressDetails', index, 'city', event.target.value)} />
+                <span>City <em>*</em></span>
+                <input aria-label={`Address ${index + 1} city`} value={address.city} onChange={(event) => updateAddressField(index, 'city', event.target.value)} onBlur={() => setTouchedFields((current) => ({ ...current, [`addressDetails.${index}.city`]: true }))} maxLength={100} required aria-invalid={Boolean(getVisibleAddressError(index, 'city', address.city, 'City'))} />
+                {getVisibleAddressError(index, 'city', address.city, 'City') || inputFeedback[`addressDetails.${index}.city`] ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getVisibleAddressError(index, 'city', address.city, 'City') || inputFeedback[`addressDetails.${index}.city`]}</p> : null}
               </label>
               <label className="lead-field">
-                <span>State</span>
-                <input aria-label={`Address ${index + 1} state`} value={address.state} onChange={(event) => updateRow('addressDetails', index, 'state', event.target.value)} />
+                <span>State <em>*</em></span>
+                <input aria-label={`Address ${index + 1} state`} value={address.state} onChange={(event) => updateAddressField(index, 'state', event.target.value)} onBlur={() => setTouchedFields((current) => ({ ...current, [`addressDetails.${index}.state`]: true }))} maxLength={100} required aria-invalid={Boolean(getVisibleAddressError(index, 'state', address.state, 'State'))} />
+                {getVisibleAddressError(index, 'state', address.state, 'State') || inputFeedback[`addressDetails.${index}.state`] ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getVisibleAddressError(index, 'state', address.state, 'State') || inputFeedback[`addressDetails.${index}.state`]}</p> : null}
               </label>
               <label className="lead-field">
-                <span>PIN Code</span>
-                <input aria-label={`Address ${index + 1} PIN code`} value={address.pinCode} onChange={(event) => updateRow('addressDetails', index, 'pinCode', event.target.value)} />
+                <span>PIN Code <em>*</em></span>
+                <input aria-label={`Address ${index + 1} PIN code`} type="text" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} title="Enter a valid 6-digit PIN code." value={address.pinCode} onChange={(event) => updateAddressField(index, 'pinCode', event.target.value)} onBlur={() => setTouchedFields((current) => ({ ...current, [`addressDetails.${index}.pinCode`]: true }))} required aria-invalid={Boolean(getVisibleAddressError(index, 'pinCode', address.pinCode, 'PIN Code'))} />
+                {getVisibleAddressError(index, 'pinCode', address.pinCode, 'PIN Code') || inputFeedback[`addressDetails.${index}.pinCode`] ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getVisibleAddressError(index, 'pinCode', address.pinCode, 'PIN Code') || inputFeedback[`addressDetails.${index}.pinCode`]}</p> : null}
               </label>
               <button type="button" onClick={() => removeRow('addressDetails', index)} aria-label={`Delete Address Details ${index + 1}`}>
                 <Trash2 size={13} />
@@ -806,7 +1069,8 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
 
       <label className="lead-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         <span>Loan Amount <em>*</em></span>
-        <input name="loanAmount" type="number" min="1" value={form.loanAmount} onChange={handleChange} required={!initialData || Boolean(initialData.loanAmount || initialData.amount)} style={{ minHeight: '42px' }} />
+        <input name="loanAmount" type="text" inputMode="numeric" pattern="[0-9]{1,12}" maxLength={12} value={form.loanAmount} onChange={handleChange} required={!initialData || Boolean(initialData.loanAmount || initialData.amount)} aria-invalid={Boolean(form.loanAmount && getFieldValidationMessage('loanAmount', form.loanAmount))} title="Enter a positive loan amount of up to 12 digits." style={{ minHeight: '42px' }} />
+        {form.loanAmount && getFieldValidationMessage('loanAmount', form.loanAmount) ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getFieldValidationMessage('loanAmount', form.loanAmount)}</p> : null}
       </label>
 
       <label className="lead-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -816,6 +1080,13 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
           {includeCurrentOption(['Home purchase', 'Home renovation', 'Medical expenses', 'Education', 'Business expansion', 'Debt consolidation', 'Vehicle purchase', 'Other'], form.loanPurpose).map((purpose) => <option key={purpose} value={purpose}>{purpose}</option>)}
         </select>
       </label>
+      {form.loanPurpose === 'Other' ? (
+        <label className="lead-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <span>Specify Purpose of Loan <em>*</em></span>
+          <input name="otherLoanPurpose" value={form.otherLoanPurpose} onChange={handleChange} maxLength={100} required title="Enter the specific purpose of the loan." aria-invalid={Boolean(getFieldValidationMessage('otherLoanPurpose', form.otherLoanPurpose))} />
+          {getFieldValidationMessage('otherLoanPurpose', form.otherLoanPurpose) ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getFieldValidationMessage('otherLoanPurpose', form.otherLoanPurpose)}</p> : null}
+        </label>
+      ) : null}
 
       <label className="lead-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         <span>Down Payment <em>*</em></span>
@@ -853,7 +1124,8 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
 
       <label className="lead-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         <span>Interest Rate (% p.a.) <em>*</em></span>
-        <input name="interestRate" type="number" min="0" max="100" step="0.01" value={form.interestRate} onChange={handleChange} required={!initialData || Boolean(initialData.interestRate)} style={{ minHeight: '42px' }} />
+        <input name="interestRate" type="text" inputMode="decimal" pattern="([0-9]+([.][0-9]{1,2})?|[.][0-9]{1,2})" minLength={1} maxLength={6} value={form.interestRate} onChange={handleChange} required={!initialData || Boolean(initialData.interestRate)} aria-invalid={Boolean(form.interestRate && getFieldValidationMessage('interestRate', form.interestRate))} title="Enter an interest rate from 0 to 100 with up to 2 decimal places." style={{ minHeight: '42px' }} />
+        {form.interestRate && getFieldValidationMessage('interestRate', form.interestRate) ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getFieldValidationMessage('interestRate', form.interestRate)}</p> : null}
       </label>
 
       <label className="lead-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -880,19 +1152,21 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
       <div className="lead-income-grid">
         <label className="lead-field">
           <span>Occupation</span>
-          <input name="occupation" value={form.occupation} onChange={handleChange} />
+          <input name="occupation" value={form.occupation} onChange={handleChange} minLength={3} maxLength={100} title="Use 3-100 alphabetic characters; single spaces between words are allowed." aria-invalid={Boolean(getVisibleFieldError('occupation', form.occupation) || inputFeedback.occupation)} />
+          {getVisibleFieldError('occupation', form.occupation) || inputFeedback.occupation ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getVisibleFieldError('occupation', form.occupation) || inputFeedback.occupation}</p> : null}
         </label>
 
         <label className="lead-field">
           <span>Employer Type</span>
-          <input name="employerType" value={form.employerType} onChange={handleChange} />
+          <input name="employerType" value={form.employerType} onChange={handleChange} minLength={3} maxLength={100} title="Use 3-100 alphabetic characters; single spaces between words are allowed." aria-invalid={Boolean(getVisibleFieldError('employerType', form.employerType) || inputFeedback.employerType)} />
+          {getVisibleFieldError('employerType', form.employerType) || inputFeedback.employerType ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getVisibleFieldError('employerType', form.employerType) || inputFeedback.employerType}</p> : null}
         </label>
 
         <label className="lead-field">
           <span>Employment Type <em>*</em></span>
           <select name="employmentType" value={form.employmentType} onChange={handleChange} required={!initialData || Boolean(initialData.employmentType)}>
             <option value="">Select type</option>
-            {includeCurrentOption(['Employee', 'Salaried', 'Self-Employed'], form.employmentType).map((type) => <option key={type} value={type}>{type}</option>)}
+            {['Salaried', 'Self-Employed'].map((type) => <option key={type} value={type}>{type}</option>)}
           </select>
         </label>
 
@@ -903,27 +1177,32 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
 
         <label className="lead-field">
           <span>Designation</span>
-          <input name="designation" value={form.designation} onChange={handleChange} disabled={form.employmentType === 'Self-Employed'} />
+          <input name="designation" value={form.designation} onChange={handleChange} disabled={form.employmentType === 'Self-Employed'} minLength={3} maxLength={50} title="Use 3-50 alphabetic characters; single spaces between words are allowed." aria-invalid={Boolean(form.designation && getFieldValidationMessage('designation', form.designation))} />
+          {form.designation && getFieldValidationMessage('designation', form.designation) ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getFieldValidationMessage('designation', form.designation)}</p> : null}
         </label>
 
         <label className="lead-field">
           <span>Employer Name</span>
-          <input name="employerName" value={form.employerName} onChange={handleChange} disabled={['Employee', 'Salaried'].includes(form.employmentType)} />
+          <input name="employerName" value={form.employerName} onChange={handleChange} minLength={3} maxLength={100} title="Use 3-100 alphabetic characters; single spaces between words are allowed." aria-invalid={Boolean(getVisibleFieldError('employerName', form.employerName) || inputFeedback.employerName)} disabled={['Employee', 'Salaried'].includes(form.employmentType)} />
+          {getVisibleFieldError('employerName', form.employerName) || inputFeedback.employerName ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getVisibleFieldError('employerName', form.employerName) || inputFeedback.employerName}</p> : null}
         </label>
 
         <label className="lead-field">
           <span>Emp Email ID</span>
-          <input name="empEmailId" type="email" value={form.empEmailId} onChange={handleChange} />
+          <input name="empEmailId" type="email" value={form.empEmailId} onChange={handleChange} maxLength={254} pattern={EMAIL_PATTERN} title="Enter a valid email address with a complete domain." aria-invalid={Boolean(form.empEmailId && getFieldValidationMessage('empEmailId', form.empEmailId))} />
+          {form.empEmailId && getFieldValidationMessage('empEmailId', form.empEmailId) ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getFieldValidationMessage('empEmailId', form.empEmailId)}</p> : null}
         </label>
 
         <label className="lead-field">
           <span>Gross Income <em>*</em></span>
-          <input name="annualIncome" type="number" min="1" value={form.annualIncome} onChange={handleChange} required={!initialData || Boolean(initialData.annualIncome)} />
+          <input name="annualIncome" type="number" min="1" step="0.01" value={form.annualIncome} onChange={handleChange} required={!initialData || Boolean(initialData.annualIncome)} aria-invalid={Boolean(form.annualIncome && getFieldValidationMessage('annualIncome', form.annualIncome))} />
+          {form.annualIncome && getFieldValidationMessage('annualIncome', form.annualIncome) ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getFieldValidationMessage('annualIncome', form.annualIncome)}</p> : null}
         </label>
 
         <label className="lead-field">
           <span>Net Income</span>
-          <input name="takeHomePay" type="number" min="0" value={form.takeHomePay} onChange={handleChange} />
+          <input name="takeHomePay" type="number" min="0" step="0.01" value={form.takeHomePay} onChange={handleChange} aria-invalid={Boolean(form.takeHomePay && getFieldValidationMessage('takeHomePay', form.takeHomePay))} />
+          {form.takeHomePay && getFieldValidationMessage('takeHomePay', form.takeHomePay) ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getFieldValidationMessage('takeHomePay', form.takeHomePay)}</p> : null}
         </label>
 
       </div>
@@ -939,6 +1218,7 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
               <Plus size={14} /> Add facility
             </button>
           </div>
+          {creditFacilityErrors[collection] ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{creditFacilityErrors[collection]}</p> : null}
           <div className="lead-data-table-wrap lead-income-table-wrap">
             <table className="lead-data-table lead-income-table">
               <thead>
@@ -952,6 +1232,7 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
                     <th scope="col">Outstanding</th>
                     <th scope="col">DPD</th>
                     <th scope="col">A/c Status</th>
+                    <th scope="col">Action</th>
                   </tr>
                 ) : (
                   <tr>
@@ -963,36 +1244,32 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
                     <th scope="col">EMI</th>
                     <th scope="col">Outstanding</th>
                     <th scope="col">Stmt Request</th>
+                    <th scope="col">Action</th>
                   </tr>
                 )}
               </thead>
               <tbody>
                 {form[collection].map((facility, index) => (
                   <tr key={index}>
-                    <td>
-                      {index + 1}
-                      {/* <button type="button" onClick={() => removeRow(collection, index)} aria-label={`Delete ${title} ${index + 1}`}>
-                        <Trash2 size={13} />
-                      </button> */}
-                    </td>
+                    <td>{index + 1}</td>
                     {collection === 'existingBankCreditFacilities' ? (
                       <>
-                        <td><input aria-label={`${title} ${index + 1} account number`} value={facility.accountNumber} onChange={(event) => updateRow(collection, index, 'accountNumber', event.target.value)} /></td>
-                        <td><input aria-label={`${title} ${index + 1} loan type`} value={facility.loanType} onChange={(event) => updateRow(collection, index, 'loanType', event.target.value)} /></td>
-                        <td><input aria-label={`${title} ${index + 1} limit`} type="number" min="0" value={facility.limit} onChange={(event) => updateRow(collection, index, 'limit', event.target.value)} /></td>
-                        <td><input aria-label={`${title} ${index + 1} EMI`} type="number" min="0" value={facility.emi} onChange={(event) => updateRow(collection, index, 'emi', event.target.value)} /></td>
-                        <td><input aria-label={`${title} ${index + 1} outstanding`} type="number" min="0" value={facility.outstanding} onChange={(event) => updateRow(collection, index, 'outstanding', event.target.value)} /></td>
-                        <td><input aria-label={`${title} ${index + 1} DPD`} value={facility.dpd} onChange={(event) => updateRow(collection, index, 'dpd', event.target.value)} /></td>
-                        <td><input aria-label={`${title} ${index + 1} account status`} value={facility.accountStatus} onChange={(event) => updateRow(collection, index, 'accountStatus', event.target.value)} /></td>
+                        <td><input aria-label={`${title} ${index + 1} account number`} value={facility.accountNumber} maxLength={30} onChange={(event) => updateRow(collection, index, 'accountNumber', event.target.value)} /></td>
+                        <td><input aria-label={`${title} ${index + 1} loan type`} value={facility.loanType} maxLength={50} onChange={(event) => updateRow(collection, index, 'loanType', event.target.value)} /></td>
+                        <td><input aria-label={`${title} ${index + 1} limit`} type="number" min="0" step="0.01" value={facility.limit} onChange={(event) => updateRow(collection, index, 'limit', event.target.value)} /></td>
+                        <td><input aria-label={`${title} ${index + 1} EMI`} type="number" min="0" step="0.01" value={facility.emi} onChange={(event) => updateRow(collection, index, 'emi', event.target.value)} /></td>
+                        <td><input aria-label={`${title} ${index + 1} outstanding`} type="number" min="0" step="0.01" value={facility.outstanding} onChange={(event) => updateRow(collection, index, 'outstanding', event.target.value)} /></td>
+                        <td><input aria-label={`${title} ${index + 1} DPD`} type="number" min="0" step="1" value={facility.dpd} onChange={(event) => updateRow(collection, index, 'dpd', event.target.value)} /></td>
+                        <td><input aria-label={`${title} ${index + 1} account status`} value={facility.accountStatus} maxLength={50} onChange={(event) => updateRow(collection, index, 'accountStatus', event.target.value)} /></td>
                       </>
                     ) : (
                       <>
-                        <td><input aria-label={`${title} ${index + 1} bank name`} value={facility.bankName} onChange={(event) => updateRow(collection, index, 'bankName', event.target.value)} /></td>
-                        <td><input aria-label={`${title} ${index + 1} account number`} value={facility.accountNumber} onChange={(event) => updateRow(collection, index, 'accountNumber', event.target.value)} /></td>
-                        <td><input aria-label={`${title} ${index + 1} loan type`} value={facility.loanType} onChange={(event) => updateRow(collection, index, 'loanType', event.target.value)} /></td>
-                        <td><input aria-label={`${title} ${index + 1} limit`} type="number" min="0" value={facility.limit} onChange={(event) => updateRow(collection, index, 'limit', event.target.value)} /></td>
-                        <td><input aria-label={`${title} ${index + 1} EMI`} type="number" min="0" value={facility.emi} onChange={(event) => updateRow(collection, index, 'emi', event.target.value)} /></td>
-                        <td><input aria-label={`${title} ${index + 1} outstanding`} type="number" min="0" value={facility.outstanding} onChange={(event) => updateRow(collection, index, 'outstanding', event.target.value)} /></td>
+                        <td><input aria-label={`${title} ${index + 1} bank name`} value={facility.bankName} maxLength={100} onChange={(event) => updateRow(collection, index, 'bankName', event.target.value)} /></td>
+                        <td><input aria-label={`${title} ${index + 1} account number`} value={facility.accountNumber} maxLength={30} onChange={(event) => updateRow(collection, index, 'accountNumber', event.target.value)} /></td>
+                        <td><input aria-label={`${title} ${index + 1} loan type`} value={facility.loanType} maxLength={50} onChange={(event) => updateRow(collection, index, 'loanType', event.target.value)} /></td>
+                        <td><input aria-label={`${title} ${index + 1} limit`} type="number" min="0" step="0.01" value={facility.limit} onChange={(event) => updateRow(collection, index, 'limit', event.target.value)} /></td>
+                        <td><input aria-label={`${title} ${index + 1} EMI`} type="number" min="0" step="0.01" value={facility.emi} onChange={(event) => updateRow(collection, index, 'emi', event.target.value)} /></td>
+                        <td><input aria-label={`${title} ${index + 1} outstanding`} type="number" min="0" step="0.01" value={facility.outstanding} onChange={(event) => updateRow(collection, index, 'outstanding', event.target.value)} /></td>
                         <td>
                           <button
                             type="button"
@@ -1003,6 +1280,11 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
                         </td>
                       </>
                     )}
+                    <td>
+                      <button type="button" onClick={() => removeRow(collection, index)} aria-label={`Delete ${title} ${index + 1}`}>
+                        <Trash2 size={13} />
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1117,20 +1399,7 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
     if (isSubmitting) return;
     setSubmissionError('');
 
-    const requiredFields = Array.from(document.querySelectorAll('.lead-step-panel input[required], .lead-step-panel select[required]'));
-    const missing = requiredFields.filter((field) => !field.disabled && (!field.value || !field.value.toString().trim()));
-
-    if (missing.length > 0) {
-      const firstMissing = missing[0];
-      firstMissing.focus();
-      window.alert('Please fill all mandatory fields before submitting the lead.');
-      return;
-    }
-    if (!form.dateOfBirth) {
-      document.querySelector('[data-date-picker-trigger="dateOfBirth"]')?.focus();
-      window.alert('Please fill all mandatory fields before submitting the lead.');
-      return;
-    }
+    if (!validateStep()) return;
 
     const customerName = [form.namePrefix, form.firstName, form.middleName, form.lastName].filter(Boolean).join(' ').trim();
     const leadData = {
@@ -1206,7 +1475,7 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
       numberOfDependents: numericValue(form.dependents),
       loanProductType: form.loanProductType,
       loanAmount: numericValue(form.loanAmount),
-      purposeOfLoan: form.loanPurpose,
+      purposeOfLoan: form.loanPurpose === 'Other' ? form.otherLoanPurpose.trim() : form.loanPurpose,
       tenure: numericValue(tenureMonths),
       numberOfInstalments: numericValue(computedInstalments),
       emi: numericValue(computedMonthlyEmi),
@@ -1244,7 +1513,9 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
       onCreate(leadData, result);
       resetAndClose(true);
     } catch (error) {
-      setSubmissionError(error instanceof Error ? error.message : 'Unable to create the lead. Please try again.');
+      const message = error instanceof Error ? error.message : 'Unable to create the lead. Please try again.';
+      setSubmissionError(message);
+      onNotify?.('error', message);
     } finally {
       setIsSubmitting(false);
     }
