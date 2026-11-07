@@ -16,16 +16,27 @@ import { getUsers } from '../../services/user_management';
 const leadTableColumns = [
     ['srNo', 'Sr. No.'],
   ['id', 'Lead ID'],
-  ['firstName', 'First Name'],
-  ['lastName', 'Last Name'],
+  ['customerName', 'Customer Name'],
   ['mobileNumber', 'Mobile Number'],
   ['assignedToName', 'Assigned To'],
   ['status', 'Status'],
   ['date', 'Lead Date'],
 ];
 
+const normalizeLeadTitle = (title) => {
+  const value = String(title || '').trim();
+  const normalizedTitle = value.toLowerCase().replace(/\.$/, '');
+  return { mr: 'Mr.', ms: 'Ms.', mrs: 'Mrs.' }[normalizedTitle] || value;
+};
+
 const leadFieldValue = (lead, field) => {
   const aliases = {
+    customerName: [
+      normalizeLeadTitle(lead.namePrefix || lead.title),
+      lead.firstName,
+      lead.middleName,
+      lead.lastName,
+    ].filter(Boolean).join(' ') || lead.customerName || lead.name,
     mobileNumber: lead.mobileNumber || lead.mobile,
     assignedBy: lead.assignedBy || lead.createdBy,
     assignedToName: lead.assignedToName || lead.assignedCheckerName || lead.assignedViewerName,
@@ -121,7 +132,9 @@ const downloadBlob = (blob, filename) => {
 };
 
 const normalizeLeadRecord = (lead) => {
-  const nameParts = String(lead.entityName || lead.organizationName || lead.customerName || lead.name || '').trim().split(/\s+/).filter(Boolean);
+  const rawCustomerNameParts = String(lead.customerName || lead.name || '').trim().split(/\s+/).filter(Boolean);
+  const inferredTitle = /^(mr\.?|mrs\.?|ms\.?|miss|dr\.?)$/i.test(rawCustomerNameParts[0] || '') ? rawCustomerNameParts[0] : '';
+  const nameParts = inferredTitle ? rawCustomerNameParts.slice(1) : rawCustomerNameParts;
   const apiDate = lead.date || lead.leadDate || lead.createdAt || '';
   const dateMatch = String(apiDate).match(/^(\d{4})-(\d{2})-(\d{2})/);
 
@@ -133,7 +146,9 @@ const normalizeLeadRecord = (lead) => {
         ? lead.customerName || lead.name || ''
         : ''),
     registrationNo: lead.registrationNo || lead.registrationNumber || lead.cin || lead.llpin || '',
+    namePrefix: normalizeLeadTitle(lead.namePrefix || lead.title || inferredTitle),
     firstName: lead.firstName || nameParts[0] || '',
+    middleName: lead.middleName || (nameParts.length > 2 ? nameParts.slice(1, -1).join(' ') : ''),
     lastName: lead.lastName || (nameParts.length > 1 ? nameParts[nameParts.length - 1] : ''),
     mobileNumber: lead.mobileNumber || lead.mobile || lead.phoneNumber || '',
     email: lead.email || lead.emailAddress || '',
@@ -264,6 +279,14 @@ const leadManagementStyles = `
 @media(max-width:540px){.lm-page{padding-top:0}.lm-page-header.page-header{align-items:flex-start;flex-direction:column;gap:12px}.lm-heading-actions{width:100%}.lm-heading-actions button{flex:1}.lm-toolbar{grid-template-columns:1fr;padding:12px}.lm-filter-search{grid-column:auto}.lm-reset{width:100%}.lm-results-meta{align-items:flex-start;flex-direction:column}.lm-pagination{align-items:flex-start;flex-direction:column}}
 `;
 
+const leadNoticeStyles = `
+.lm-toast{position:fixed;top:50%;left:50%;right:auto;transform:translate(-50%,-50%);z-index:1400;display:flex;align-items:flex-start;gap:14px;width:max-content;max-width:min(420px,calc(100vw - 32px));padding:13px 15px;border:1px solid;border-radius:7px;box-shadow:0 12px 36px rgba(20,50,48,.18);font-size:12px;font-weight:650;line-height:1.5}
+.lm-toast-success{border-color:#b9daca;background:#f1fbf4;color:#286746}
+.lm-toast-error{border-color:#edc9c9;background:#fff5f5;color:#963838}
+.lm-toast button{display:grid;place-items:center;flex:0 0 22px;width:22px;height:22px;padding:0;border:0;border-radius:4px;background:transparent;color:inherit;cursor:pointer}
+.lm-toast button:hover{background:rgba(30,60,55,.08)}
+`;
+
 export function LeadManagementPage({ corporate = false }) {
   const [leads, setLeads] = useState([]);
   const [isLoadingLeads, setIsLoadingLeads] = useState(true);
@@ -302,7 +325,15 @@ export function LeadManagementPage({ corporate = false }) {
   const [openDatePicker, setOpenDatePicker] = useState(null);
   const fromDatePickerRef = useRef(null);
   const toDatePickerRef = useRef(null);
+  const noticeTimerRef = useRef(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [notice, setNotice] = useState(null);
+
+  const showNotice = (type, message) => {
+    if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
+    setNotice({ type, message });
+    noticeTimerRef.current = window.setTimeout(() => setNotice(null), 5000);
+  };
 
   useEffect(() => {
     if (!openDatePicker) return undefined;
@@ -319,6 +350,10 @@ export function LeadManagementPage({ corporate = false }) {
     document.addEventListener('pointerdown', handleOutsidePointerDown);
     return () => document.removeEventListener('pointerdown', handleOutsidePointerDown);
   }, [openDatePicker]);
+
+  useEffect(() => () => {
+    if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
+  }, []);
 
   useEffect(() => {
     let isActive = true;
@@ -368,6 +403,7 @@ export function LeadManagementPage({ corporate = false }) {
         remarks: '',
       }, ...current];
     });
+    showNotice('success', response?.message || 'Lead created successfully.');
   };
 
   const handleCorporateSaved = (form, response) => {
@@ -392,9 +428,19 @@ export function LeadManagementPage({ corporate = false }) {
   };
 
   const handleUpdateLead = async (form, updates) => {
-    if (!editingLead?.id) throw new Error('The lead ID is missing.');
+    if (!editingLead?.id) {
+      const error = new Error('The lead ID is missing.');
+      showNotice('error', error.message);
+      throw error;
+    }
 
-    const response = await updateLead(editingLead.id, updates);
+    let response;
+    try {
+      response = await updateLead(editingLead.id, updates);
+    } catch (error) {
+      showNotice('error', error instanceof Error ? error.message : 'Unable to update the lead.');
+      throw error;
+    }
     const nextLeads = leads.map((lead) => {
       if (lead.id !== editingLead.id) return lead;
 
@@ -412,6 +458,7 @@ export function LeadManagementPage({ corporate = false }) {
       });
     });
     setLeads(saveLeads(nextLeads));
+    showNotice('success', response?.message || 'Lead updated successfully.');
     setEditingLead(null);
   };
 
@@ -465,9 +512,12 @@ export function LeadManagementPage({ corporate = false }) {
           leadStatus: assignedRecord?.leadStatus || assignedRecord?.status || 'IN_PROGRESS',
         });
       }));
+      showNotice('success', response?.message || 'Lead assigned successfully.');
       setAssignmentLead(null);
     } catch (error) {
-      setMakerError(error instanceof Error ? error.message : 'Unable to assign this lead.');
+      const message = error instanceof Error ? error.message : 'Unable to assign this lead.';
+      setMakerError(message);
+      showNotice('error', message);
     } finally {
       setIsAssigning(false);
     }
@@ -480,11 +530,15 @@ export function LeadManagementPage({ corporate = false }) {
     setExportError('');
     if (mode === 'date') {
       if (!exportFromDate || !exportToDate) {
-        setExportError('Select both a start date and an end date.');
+        const message = 'Select both a start date and an end date.';
+        setExportError(message);
+        showNotice('error', message);
         return;
       }
       if (exportFromDate > exportToDate) {
-        setExportError('The start date must be on or before the end date.');
+        const message = 'The start date must be on or before the end date.';
+        setExportError(message);
+        showNotice('error', message);
         return;
       }
     }
@@ -513,9 +567,12 @@ export function LeadManagementPage({ corporate = false }) {
         const csv = `\uFEFF${leadsToCsv(matchingLeads)}`;
         downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `leads-${exportFromDate}-to-${exportToDate}.csv`);
       }
+      showNotice('success', corporate ? 'Corporate leads exported successfully.' : 'Leads exported successfully.');
       setShowExportDialog(false);
     } catch (error) {
-      setExportError(error instanceof Error ? error.message : 'Unable to export leads.');
+      const message = error instanceof Error ? error.message : 'Unable to export leads.';
+      setExportError(message);
+      showNotice('error', message);
     } finally {
       setIsExporting(false);
     }
@@ -538,7 +595,9 @@ export function LeadManagementPage({ corporate = false }) {
     if (file && !file.name.toLowerCase().endsWith('.csv')) {
       setBulkFile(null);
       event.target.value = '';
-      setImportError('Choose a CSV (.csv) file.');
+      const message = 'Choose a CSV (.csv) file.';
+      setImportError(message);
+      showNotice('error', message);
       return;
     }
     setBulkFile(file);
@@ -558,7 +617,13 @@ export function LeadManagementPage({ corporate = false }) {
       const importedCount = resultData.importedCount ?? resultData.successCount ?? resultData.totalImported;
       const rejectedCount = resultData.failedCount ?? resultData.errorCount;
       const rowErrors = resultData.errors || resultData.rowErrors || resultData.failedRows || [];
-      const rowErrorList = Array.isArray(rowErrors) ? rowErrors : [];
+      const rowErrorList = Array.isArray(rowErrors)
+        ? rowErrors
+        : typeof rowErrors === 'string'
+          ? [rowErrors]
+          : rowErrors && typeof rowErrors === 'object'
+            ? Object.entries(rowErrors).map(([field, messages]) => `${field}: ${Array.isArray(messages) ? messages.join(', ') : String(messages)}`)
+            : [];
       const countText = importedCount !== undefined ? ` ${importedCount} lead${Number(importedCount) === 1 ? '' : 's'}` : '';
       const hasRowErrors = Number(rejectedCount) > 0 || rowErrorList.length > 0;
       setImportRowErrors(rowErrorList.slice(0, 10).map((error) => {
@@ -567,14 +632,20 @@ export function LeadManagementPage({ corporate = false }) {
         const message = error.message ?? error.error ?? 'Row could not be imported.';
         return row ? `Row ${row}: ${message}` : String(message);
       }));
-      setImportSuccess(`${resultData.message || (hasRowErrors ? 'Import completed with row errors.' : `Leads imported successfully.${countText ? ` Imported${countText}.` : ''}`)}${rejectedCount ? ` ${rejectedCount} row${Number(rejectedCount) === 1 ? '' : 's'} could not be imported.` : ''}`);
+      const importMessage = hasRowErrors
+        ? `Import completed with validation errors.${rejectedCount ? ` ${rejectedCount} row${Number(rejectedCount) === 1 ? '' : 's'} could not be imported.` : ''}`
+        : resultData.message || `Leads imported successfully.${countText ? ` Imported${countText}.` : ''}`;
+      setImportSuccess(importMessage);
+      showNotice(hasRowErrors ? 'error' : 'success', hasRowErrors ? `Bulk lead upload completed with validation errors. ${importMessage}` : 'Bulk leads uploaded successfully.');
       setReloadKey((key) => key + 1);
       window.setTimeout(() => {
         setShowBulkImport(false);
         setBulkFile(null);
       }, 1800);
     } catch (error) {
-      setImportError(error instanceof Error ? error.message : 'Unable to import leads.');
+      const message = error instanceof Error ? error.message : 'Unable to import leads.';
+      setImportError(message);
+      showNotice('error', message);
     } finally {
       setIsImporting(false);
     }
@@ -623,6 +694,9 @@ export function LeadManagementPage({ corporate = false }) {
     setOpenDatePicker(null);
   };
 
+  const todayDate = dateFromIso(dateToIso(new Date()));
+  const selectedToDate = dateFromIso(toDate);
+  const fromDateMax = selectedToDate && selectedToDate < todayDate ? selectedToDate : todayDate;
   const activeLeads = corporate ? leads.filter((lead) => isCorporateLead(lead)) : leads;
   const filteredLeads = activeLeads.filter((lead) => {
     const leadStatus = lead.status === 'Pending' ? 'New' : lead.status || 'New';
@@ -632,7 +706,7 @@ export function LeadManagementPage({ corporate = false }) {
     const toMatches = !toDate || Boolean(leadDate && leadDate <= toDate);
     const fieldValues = (corporate
       ? ['id', 'entityName', 'registrationNo', 'assignedBy', 'assignedToName']
-      : ['id', 'firstName', 'lastName', 'mobileNumber', 'assignedBy', 'assignedToName']).map((field) => leadFieldValue(lead, field));
+      : ['id', 'customerName', 'mobileNumber', 'assignedBy', 'assignedToName']).map((field) => leadFieldValue(lead, field));
     const searchMatches = !searchQuery || fieldValues.some((value) => String(value ?? '').toLowerCase().includes(searchQuery));
     return statusMatches && fromMatches && toMatches && searchMatches;
   });
@@ -647,7 +721,7 @@ export function LeadManagementPage({ corporate = false }) {
   return (
     <>
       <AppShell title="Lead Management">
-        <style>{leadManagementStyles}</style>
+        <style>{leadManagementStyles}{leadNoticeStyles}</style>
         {!corporate && (showNewLead || Boolean(editingLead)) ? (
           <NewLead
             key={editingLead?.id || 'new-lead'}
@@ -659,6 +733,7 @@ export function LeadManagementPage({ corporate = false }) {
             }}
             onCreate={handleCreateLead}
             onUpdate={handleUpdateLead}
+            onNotify={showNotice}
           />
         ) : (
         <main className="lm-page">
@@ -714,6 +789,7 @@ export function LeadManagementPage({ corporate = false }) {
                         setFromDate(dateToIso(date));
                         setOpenDatePicker(null);
                       }}
+                      maxDate={fromDateMax}
                       defaultActiveStartDate={dateFromIso(fromDate) || new Date()}
                       locale="en-IN"
                     />
@@ -740,6 +816,7 @@ export function LeadManagementPage({ corporate = false }) {
                       className="loan-birth-calendar"
                       value={dateFromIso(toDate)}
                       minDate={dateFromIso(fromDate) || undefined}
+                      maxDate={todayDate}
                       onChange={(date) => {
                         setToDate(dateToIso(date));
                         setOpenDatePicker(null);
@@ -757,7 +834,7 @@ export function LeadManagementPage({ corporate = false }) {
           {loadError ? <div className="lm-load-error" role="alert"><span>{loadError}</span><button type="button" onClick={() => setReloadKey((key) => key + 1)}>Retry</button></div> : null}
 
           <section className="lm-results" aria-label="Lead records">
-            <div className="lm-results-meta"><strong>{filteredLeads.length} {filteredLeads.length === 1 ? 'lead' : 'leads'}</strong><span>{corporate ? 'Search covers lead ID, entity name, registration number, and assignee.' : 'Search covers lead ID, first and last name, mobile number, and assignee.'}</span></div>
+            <div className="lm-results-meta"><strong>{filteredLeads.length} {filteredLeads.length === 1 ? 'lead' : 'leads'}</strong><span>{corporate ? 'Search covers lead ID, entity name, registration number, and assignee.' : 'Search covers lead ID, customer name, mobile number, and assignee.'}</span></div>
             <div className="lm-table-wrap">
               <table className="lm-table">
                 <thead><tr>{tableColumns.map(([, label]) => <th key={label}>{label}</th>)}<th>Actions</th></tr></thead>
@@ -797,6 +874,16 @@ export function LeadManagementPage({ corporate = false }) {
         </main>
         )}
       </AppShell>
+
+      {notice ? (
+        <div className={`lm-toast lm-toast-${notice.type}`} role={notice.type === 'error' ? 'alert' : 'status'} aria-live={notice.type === 'error' ? 'assertive' : 'polite'}>
+          <span>{notice.message}</span>
+          <button type="button" aria-label="Dismiss notification" onClick={() => {
+            if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
+            setNotice(null);
+          }}><X size={15} /></button>
+        </div>
+      ) : null}
 
       {corporate ? (
         <CorporateLeadWizard
