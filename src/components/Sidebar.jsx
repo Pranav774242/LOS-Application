@@ -44,7 +44,11 @@ const NAV = [
         href: "/customer_management",
       },
       { label: "Loan application", icon: FilePlus2, href: "/loan_application" },
-      { label: "Gold Loan Application", icon: Coins, href: "/gold_loan_application" },
+      {
+        label: "Gold Loan Application",
+        icon: Coins,
+        href: "/gold_loan_application",
+      },
     ],
   },
   {
@@ -105,9 +109,14 @@ const NAV = [
       },
       { label: "Gold rate master", icon: Coins, href: "/gold_rate_master" },
       {
-        label: "Bank branch master",
+        label: "Bank master",
         icon: Building2,
-        href: "/master_creation",
+        href: "/bank_master",
+      },
+      {
+        label: "Bank branch",
+        icon: Building2,
+        href: "/bank_branch",
       },
     ],
   },
