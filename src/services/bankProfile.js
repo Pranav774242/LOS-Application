@@ -1,3 +1,5 @@
+import axios from "axios";
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 export async function getBankProfile() {
@@ -53,16 +55,10 @@ export async function getBankProfile() {
 }
 
 export async function createBankBranch(branch) {
-  const response = await fetch('/api/bank-profile/branch', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(branch),
-  });
-
-  const result = await response.json().catch(() => null);
-  if (!response.ok || result?.success === false) {
-    throw new Error(result?.message || 'Unable to submit the bank branch.');
+  try {
+    const response = await axios.post('/api/bank-profile/branch', branch, { headers: { 'Content-Type': 'application/json' } });
+    return response.data;
+  } catch (error) {
+    throw new Error(error.response?.data?.message || error.message || 'Unable to submit the bank branch.');
   }
-
-  return result;
 }
