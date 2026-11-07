@@ -43,8 +43,11 @@ export default function LeadDatePicker({
   onChange,
   min,
   max,
+  calendarStartDate,
   disabled = false,
   required = false,
+  className = '',
+  invalid = false,
 }) {
   const containerRef = useRef(null);
   const [isOpen, setIsOpen] = useState(false);
@@ -70,16 +73,17 @@ export default function LeadDatePicker({
   return (
     <>
       <style>{leadDatePickerStyles}</style>
-      <div ref={containerRef} className="lead-calendar-picker">
+      <div ref={containerRef} className={`lead-calendar-picker ${className}`.trim()}>
         <input type="hidden" name={name} value={value || ''} disabled={disabled} />
         <button
           id={id}
           type="button"
-          className="dob-picker-trigger lead-date-picker-trigger"
+          className={`dob-picker-trigger lead-date-picker-trigger ${invalid ? 'has-error' : ''}`.trim()}
           aria-label={`Choose ${label}`}
           aria-haspopup="dialog"
           aria-expanded={isOpen}
           aria-required={required}
+          aria-invalid={invalid || undefined}
           data-date-picker-trigger={name}
           disabled={disabled}
           onClick={() => setIsOpen((open) => !open)}
@@ -94,7 +98,7 @@ export default function LeadDatePicker({
               value={selectedDate}
               minDate={toCalendarDate(min) || undefined}
               maxDate={toCalendarDate(max) || undefined}
-              defaultActiveStartDate={selectedDate || toCalendarDate(min) || toCalendarDate(max) || new Date()}
+              defaultActiveStartDate={selectedDate || toCalendarDate(calendarStartDate) || toCalendarDate(min) || toCalendarDate(max) || new Date()}
               onChange={handleDateChange}
               locale="en-IN"
             />
