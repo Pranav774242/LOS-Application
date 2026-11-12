@@ -51,6 +51,38 @@ export function getCustomerInitials(name) {
     .toUpperCase();
 }
 
+export function normalizeCustomerType(value, age) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'minor') return 'Minor';
+  if (normalized === 'senior' || normalized === 'senior citizen') return 'Senior';
+  if (normalized === 'adult' || normalized === 'normal') return 'Adult';
+
+  const numericAge = String(age ?? '').trim() ? Number(age) : Number.NaN;
+  if (Number.isFinite(numericAge) && numericAge < 18) return 'Minor';
+  if (Number.isFinite(numericAge) && numericAge >= 60) return 'Senior';
+  return 'Adult';
+}
+
+export function getCustomerLoanHistory(customerId, applications = []) {
+  return applications
+    .filter((application) => application.customerId === customerId)
+    .map((application, index) => {
+      const loan = application.goldLoanForm || {};
+      const disbursement = loan.disbursement || {};
+
+      return {
+        id: application.id || `${customerId}-loan-${index + 1}`,
+        source: 'application',
+        bankName: disbursement.bankName || '',
+        accountNumber: disbursement.accountNumber || loan.loanAccountNumber || '',
+        loanType: loan.productName || application.product || '',
+        totalOutstanding: loan.outstandingAmount || loan.totalOutstanding || '',
+        emi: loan.instalmentAmount || loan.installmentAmount || '',
+        expiryDate: loan.expiryDate || ''
+      };
+    });
+}
+
 export function createCustomerRecord(form, existingCustomer = {}) {
   const name = getCustomerDisplayName(form) || existingCustomer.name || '';
   return {
@@ -60,7 +92,7 @@ export function createCustomerRecord(form, existingCustomer = {}) {
     type: form.customerType || existingCustomer.type || 'Individual',
     phone: form.mobileNo || existingCustomer.phone || '',
     email: form.email || existingCustomer.email || '',
-    kyc: form.kycStatus || existingCustomer.kyc || 'Pending',
+    kyc: form.kycStatus || existingCustomer.kyc || '',
     activeLoans: existingCustomer.activeLoans ?? 0,
     onboardingForm: serializeCustomerForm(form),
   };
