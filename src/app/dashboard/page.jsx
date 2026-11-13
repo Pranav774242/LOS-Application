@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import AppShell from '../../components/AppShell';
 import { api } from '../../services/api';
+import { getCustomerName } from '../../components/GoldLoanApplication';
 
 const pipeline = [
   { label: 'Approved', value: 96, percent: 39, color: 'approved' },
@@ -210,7 +211,7 @@ export default function DashboardPage() {
                 {recentApplications.map((application) => (
                   <tr key={application.id}>
                     <td><strong className="application-id">{application.id}</strong></td>
-                    <td>{application.customer}</td>
+                    <td>{getCustomerName(application)}</td>
                     <td>{application.product}</td>
                     <td className="application-amount">{formatAmount(application.amount)}</td>
                     <td className="updated-time">{application.updated}</td>

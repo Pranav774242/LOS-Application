@@ -331,8 +331,8 @@ export default function RetailLoanApplicationView({ application, onBack, backLab
                 <DetailGrid
                   values={{ ...form, loanAmount: amount }}
                   fields={[
-                    ['sanctionedDate', 'Sanctioned Date'],
-                    ['sanctioningAuthority', 'Sanctioning Authority'],
+                    ['sanctionedDate', 'Sanction Date'],
+                    ['sanctioningAuthority', 'Sanction Authority'],
                     ['loanAmount', 'Loan Amount'],
                     ['tenureMonths', 'Tenure (months)'],
                     ['interestRate', 'Interest Rate (%)'],
@@ -487,12 +487,14 @@ export default function RetailLoanApplicationView({ application, onBack, backLab
                 <DetailGrid
                   values={form}
                   fields={[
-                    ['disbursementAccountNumber', 'Account Number'],
-                    ['disbursementAccountType', 'Account Type'],
-                    ['bankName', 'Bank Name'],
+                    ['disbursementMode', 'Payment Mode'],
+                    ['disbursementAccountNumber', 'Account No'],
                     ['ifscCode', 'IFSC Code'],
-                    ['disbursementMode', 'Disbursement Mode'],
-                    ['disbursementAmount', 'Disbursement Amount'],
+                    ['bankName', 'Bank Name'],
+                    ['beneficiaryAccountName', 'Account Name'],
+                    ['beneficiaryMobileNumber', 'Mobile No'],
+                    ['disbursementAmount', 'Amount (Rs.)'],
+                    ['remarks', 'Remarks'],
                   ]}
                 />
               </div>

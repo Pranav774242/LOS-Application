@@ -43,18 +43,22 @@ function formatCustomerNameWithTitle(customer) {
   }
 
   if (!title) {
-    if (customer.id === 'CUS-2024-00841' || /rohan/i.test(firstName)) title = 'Mr';
-    else if (customer.id === 'CUS-2024-00798' || /neha/i.test(firstName)) title = 'Ms';
-    else if (customer.id === 'CUS-2024-00742' || /vikram/i.test(firstName)) title = 'Mr';
-    else if (customer.id === 'CUS-2024-00691' || /ananya/i.test(firstName)) title = 'Ms';
-    else if (/sakshi/i.test(firstName)) title = 'Ms';
-    else if (form.gender === 'Female') title = 'Ms';
-    else if (form.gender === 'Male') title = 'Mr';
-    else title = 'Mr';
+    if (customer.id === 'CUS-2024-00841' || /rohan/i.test(firstName)) title = 'Mr.';
+    else if (customer.id === 'CUS-2024-00798' || /neha/i.test(firstName)) title = 'Ms.';
+    else if (customer.id === 'CUS-2024-00742' || /vikram/i.test(firstName)) title = 'Mr.';
+    else if (customer.id === 'CUS-2024-00691' || /ananya/i.test(firstName)) title = 'Ms.';
+    else if (/sakshi/i.test(firstName)) title = 'Ms.';
+    else if (form.gender === 'Female') title = 'Ms.';
+    else if (form.gender === 'Male') title = 'Mr.';
+    else title = 'Mr.';
   }
 
-  const cleanTitle = title.replace(/\.$/, '');
-  const nameDisplay = [cleanTitle, firstName, lastName].filter(Boolean).join(' ');
+  let formattedTitle = title ? title.trim() : '';
+  if (/^(mr|mrs|ms|dr)$/i.test(formattedTitle)) {
+    formattedTitle = `${formattedTitle.charAt(0).toUpperCase()}${formattedTitle.slice(1).toLowerCase()}.`;
+  }
+
+  const nameDisplay = [formattedTitle, firstName, lastName].filter(Boolean).join(' ').trim();
   return nameDisplay || customer.name || 'Not provided';
 }
 

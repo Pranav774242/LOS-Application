@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   Check,
@@ -14,6 +14,7 @@ import {
 import AppShell from './AppShell';
 import Card from './Card';
 import PageHeader from './PageHeader';
+import LeadDatePicker from './LeadDatePicker';
 import { getApplicationId, getCustomerName } from './GoldLoanApplication';
 
 export const RETAIL_LOAN_STORAGE_KEY = 'los.retailLoanApplications';
@@ -29,7 +30,9 @@ const RETAIL_STEPS = [
   'Disbursement',
 ];
 
+let nextPartySequence = 1;
 const blankRelatedParty = () => ({
+  id: `party-${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${nextPartySequence++}`,
   nameType: '',
   relation: '',
   customerNo: '',
@@ -46,6 +49,211 @@ function isValidDate(value) {
   return date.getFullYear() === year
     && date.getMonth() === month - 1
     && date.getDate() === day;
+}
+
+function dateAfter(value) {
+  if (!isValidDate(value)) return '';
+  const [year, month, day] = value.split('-').map(Number);
+  const nextDate = new Date(year, month - 1, day + 1);
+  return `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}-${String(nextDate.getDate()).padStart(2, '0')}`;
+}
+
+function getTodayDate() {
+  const today = new Date();
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+}
+
+const NAME_PATTERN = /^[\p{L}\p{M}]+(?:[ '-][\p{L}\p{M}]+)*$/u;
+const NAME_INPUT_PATTERN = /^[\p{L}\p{M} '-]*$/u;
+const CODE_PATTERN = /^[A-Za-z0-9_-]+$/;
+const CODE_INPUT_PATTERN = /^[A-Za-z0-9_-]*$/;
+const TEXT_PATTERN = /^[\p{L}\p{M}0-9][\p{L}\p{M}0-9 .,'&()/-]*$/u;
+const ADDRESS_PATTERN = /^[\p{L}\p{M}0-9][\p{L}\p{M}0-9 .,'&#()/:+-]*$/u;
+const REMARKS_PATTERN = /^[\p{L}\p{M}0-9 .,'&#()/:+-]*$/u;
+const INPUT_VALIDATION = {
+  loanAccountNumber: [CODE_INPUT_PATTERN, 'Use letters, numbers, hyphens, and underscores only.'],
+  customerId: [CODE_INPUT_PATTERN, 'Use letters, numbers, hyphens, and underscores only.'],
+  firstName: [NAME_INPUT_PATTERN, 'Use letters, spaces, apostrophes, or hyphens only.'],
+  middleName: [NAME_INPUT_PATTERN, 'Use letters, spaces, apostrophes, or hyphens only.'],
+  lastName: [NAME_INPUT_PATTERN, 'Use letters, spaces, apostrophes, or hyphens only.'],
+  sanctioningAuthority: [NAME_INPUT_PATTERN, 'Use letters, spaces, apostrophes, or hyphens only.'],
+  productCode: [CODE_INPUT_PATTERN, 'Use letters, numbers, hyphens, and underscores only.'],
+  schemeCode: [CODE_INPUT_PATTERN, 'Use letters, numbers, hyphens, and underscores only.'],
+  purposeCode: [CODE_INPUT_PATTERN, 'Use letters, numbers, hyphens, and underscores only.'],
+  prioritySectorCode: [CODE_INPUT_PATTERN, 'Use letters, numbers, hyphens, and underscores only.'],
+  termCode: [CODE_INPUT_PATTERN, 'Use letters, numbers, hyphens, and underscores only.'],
+  securityId: [CODE_INPUT_PATTERN, 'Use letters, numbers, hyphens, and underscores only.'],
+  city: [/^[A-Za-z\s]*$/, 'City must contain alphabetic characters and spaces only.'],
+  state: [/^[A-Za-z\s]*$/, 'State must contain alphabetic characters and spaces only.'],
+  pincode: [/^\d*$/, 'PIN code must contain digits only.'],
+  valuerName: [NAME_INPUT_PATTERN, 'Use letters, spaces, apostrophes, or hyphens only.'],
+  policyNumber: [/^[A-Za-z0-9/-]*$/, 'Use letters, numbers, hyphens, or slashes only.'],
+  disbursementAccountNumber: [/^\d*$/, 'Account number must contain digits only.'],
+  ifscCode: [/^[A-Za-z0-9]*$/, 'IFSC code must contain letters and numbers only.'],
+  beneficiaryMobileNumber: [/^\d*$/, 'Mobile number must contain digits only.'],
+};
+const ACCOUNT_STATUS_OPTIONS = ['Draft', 'Pending', 'In review', 'Approved', 'Disbursed', 'Awaiting KYC', 'Returned', 'Rejected', 'Active', 'Closed'];
+const MODE_OF_OPERATION_OPTIONS = ['Single', 'Joint', 'Either or Survivor', 'Anyone or Survivor'];
+const PARTY_NAME_TYPE_OPTIONS = ['Applicant', 'Guarantor', 'Co-applicant', 'Nominee'];
+const PARTY_RELATION_OPTIONS = ['Spouse', 'Parent', 'Sibling', 'Child', 'Other'];
+const SALUTATION_OPTIONS = ['Mr', 'Mrs', 'Ms', 'Dr'];
+const SECURITY_TYPE_OPTIONS = [
+  'Immovable Property',
+  'Movable Property',
+  'Hypothecation',
+  'Mortgage',
+  'Pledge',
+  'Fixed Deposit',
+  'Gold ornaments',
+  'Vehicle',
+  'Other',
+];
+
+function isValidAmount(value) {
+  const text = String(value ?? '').trim();
+  return /^(?:\d+)(?:\.\d{1,2})?$/.test(text)
+    && Number.isFinite(Number(text))
+    && Number(text) > 0;
+}
+
+function getSynchronizedSecurityValue(value) {
+  return isValidAmount(value) ? String(value).trim() : '';
+}
+
+function isValidPercentage(value) {
+  const text = String(value ?? '').trim();
+  return /^(?:\d+)(?:\.\d{1,2})?$/.test(text)
+    && Number.isFinite(Number(text))
+    && Number(text) >= 0
+    && Number(text) <= 100;
+}
+
+function calculateTotalInterestRate(interestRate, offsetRate) {
+  const interest = String(interestRate ?? '').trim();
+  const offset = String(offsetRate ?? '').trim();
+  if (!interest || !isValidPercentage(interest) || (offset && !isValidPercentage(offset))) return '';
+  const total = Number(interest) + (offset ? Number(offset) : 0);
+  return String(Math.round(total * 100) / 100);
+}
+
+function validateText(value, label, { required = false, minLength = 3, maxLength = 50, pattern = TEXT_PATTERN } = {}) {
+  const text = String(value ?? '').trim();
+  if (!text) return required ? `${label} is required.` : '';
+  if (text.length < minLength || text.length > maxLength) {
+    return `${label} must be between ${minLength} and ${maxLength} characters.`;
+  }
+  if (!pattern.test(text)) return `Enter a valid ${label.toLowerCase()}.`;
+  return '';
+}
+
+function validateCode(value, label, { required = false, minLength = 3, maxLength = 30 } = {}) {
+  const text = String(value ?? '').trim();
+  if (!text) return required ? `${label} is required.` : '';
+  if (text.length < minLength || text.length > maxLength || !CODE_PATTERN.test(text)) {
+    return `${label} must be 3–30 characters and contain only letters, numbers, hyphens, or underscores.`;
+  }
+  return '';
+}
+
+function validatePolicyNumber(value) {
+  const raw = String(value ?? '');
+  const text = raw.trim();
+  if (!text) return 'Policy number is required.';
+  if (/\s/.test(raw)) return 'Spaces are not allowed in policy number.';
+  if (!/^[A-Za-z0-9]+(?:[-/][A-Za-z0-9]+)*$/.test(text)) {
+    return 'Enter a valid alphanumeric policy number.';
+  }
+  if (text.length < 5 || text.length > 25) {
+    return 'Policy number must be between 5 and 25 characters.';
+  }
+  return '';
+}
+
+function validateAmount(value, label, required = false) {
+  const text = String(value ?? '').trim();
+  if (!text) return required ? `${label} is required.` : '';
+  return isValidAmount(text) ? '' : `${label} must be a positive amount with up to 2 decimal places.`;
+}
+
+function validateRate(value, label, required = false) {
+  const text = String(value ?? '').trim();
+  if (!text) return required ? `${label} is required.` : '';
+  return isValidPercentage(text) ? '' : `${label} must be between 0 and 100%.`;
+}
+
+function validateDate(value, label, required = false) {
+  const text = String(value ?? '').trim();
+  if (!text) return required ? `${label} is required.` : '';
+  return isValidDate(text) ? '' : `Enter a valid ${label.toLowerCase()}.`;
+}
+
+function validateRelatedParty(party, index) {
+  const errors = {};
+  const prefix = `relatedParties.${index}.`;
+  if (!PARTY_NAME_TYPE_OPTIONS.includes(party.nameType)) {
+    errors[`${prefix}nameType`] = 'Select a valid name type.';
+  }
+  if (!PARTY_RELATION_OPTIONS.includes(party.relation)) {
+    errors[`${prefix}relation`] = 'Select a valid relation.';
+  }
+  errors[`${prefix}customerNo`] = validateCode(party.customerNo, 'Customer number', { required: true });
+  if (!SALUTATION_OPTIONS.includes(party.salutation)) {
+    errors[`${prefix}salutation`] = 'Select a valid salutation.';
+  }
+  errors[`${prefix}firstName`] = validateText(party.firstName, 'First name', { required: true, pattern: NAME_PATTERN });
+  errors[`${prefix}middleName`] = validateText(party.middleName, 'Middle name', { pattern: NAME_PATTERN });
+  errors[`${prefix}lastName`] = validateText(party.lastName, 'Last name', { required: true, pattern: NAME_PATTERN });
+  return Object.fromEntries(Object.entries(errors).filter(([, error]) => error));
+}
+
+function validateDisbursementField(form, field, fieldValue = form[field]) {
+  const rawValue = String(fieldValue ?? '');
+  const value = rawValue.trim();
+  const requiredMessages = {
+    disbursementMode: 'Payment mode is required.',
+    disbursementAccountNumber: 'Account number is required.',
+    ifscCode: 'IFSC code is required.',
+    bankName: 'Bank name is required.',
+    beneficiaryAccountName: 'Account name is required.',
+    beneficiaryMobileNumber: 'Mobile number is required.',
+    disbursementAmount: 'Amount is required.',
+  };
+
+  if (!value) return requiredMessages[field] || '';
+
+  if (field === 'disbursementMode') {
+    return ['NEFT', 'RTGS', 'IMPS', 'Cheque'].includes(value)
+      ? ''
+      : 'Select a valid payment mode.';
+  }
+  if (field === 'disbursementAccountNumber') {
+    if (!/^\d+$/.test(rawValue)) return 'Account number must contain digits only.';
+    if (rawValue.length < 9) return 'Account number must contain at least 9 digits.';
+    if (rawValue.length > 18) return 'Account number cannot exceed 18 digits.';
+  }
+  if (field === 'ifscCode' && !/^[A-Z]{4}0[A-Z0-9]{6}$/i.test(value)) {
+    return 'Enter a valid 11-character IFSC code.';
+  }
+  if (field === 'bankName') {
+    if (value.length < 3) return 'Bank name must contain at least 3 characters.';
+    if (value.length > 50) return 'Bank name cannot exceed 50 characters.';
+    if (!TEXT_PATTERN.test(value)) return 'Enter a valid bank name.';
+  }
+  if (field === 'beneficiaryAccountName') {
+    if (value.length < 3) return 'Account name must contain at least 3 characters.';
+    if (value.length > 50) return 'Account name cannot exceed 50 characters.';
+    if (!TEXT_PATTERN.test(value)) return 'Enter a valid account name.';
+  }
+  if (field === 'beneficiaryMobileNumber' && !/^[6-9]\d{9}$/.test(rawValue)) {
+    return 'Enter a valid 10-digit mobile number starting with 6, 7, 8, or 9.';
+  }
+  if (field === 'disbursementAmount') {
+    if (!/^\d+(\.\d{1,2})?$/.test(rawValue) || !Number.isFinite(Number(rawValue))) {
+      return 'Enter a valid amount with up to 2 decimal places.';
+    }
+    if (Number(rawValue) <= 0) return 'Amount must be greater than zero.';
+  }
+  return '';
 }
 
 export function createInitialRetailLoanForm(application) {
@@ -138,11 +346,13 @@ export function createInitialRetailLoanForm(application) {
     sumAssured: application?.sumAssured || '',
     insuranceExpiryDate: application?.insuranceExpiryDate || application?.expiryDate || goldLoan.expiryDate || '',
     disbursementAccountNumber: application?.disbursementAccountNumber || goldLoan.disbursement?.accountNumber || '',
-    disbursementAccountType: application?.disbursementAccountType || goldLoan.disbursement?.accountType || '',
     bankName: application?.bankName || goldLoan.disbursement?.bankName || '',
     ifscCode: application?.ifscCode || goldLoan.disbursement?.ifscCode || '',
     disbursementMode: application?.disbursementMode || goldLoan.disbursement?.mode || '',
     disbursementAmount: application?.disbursementAmount || goldLoan.disbursement?.amount || initialAmount,
+    beneficiaryAccountName: application?.beneficiaryAccountName || goldLoan.disbursement?.accountName || '',
+    beneficiaryMobileNumber: application?.beneficiaryMobileNumber || goldLoan.disbursement?.mobileNumber || '',
+    remarks: application?.remarks || goldLoan.disbursement?.remarks || '',
     relatedParties: Array.isArray(savedForm.relatedParties)
       ? savedForm.relatedParties.map((party) => ({ ...blankRelatedParty(), ...party }))
       : Array.isArray(goldLoan.relatedParties)
@@ -150,6 +360,9 @@ export function createInitialRetailLoanForm(application) {
         : [blankRelatedParty()],
   };
 
+  const savedFormFields = Object.fromEntries(
+    Object.entries(savedForm).filter(([key]) => key !== 'disbursementAccountType'),
+  );
   const formFields = Object.keys(initialForm).filter((key) => key !== 'relatedParties');
   const numericFields = new Set([
     'loanAmount',
@@ -183,14 +396,19 @@ export function createInitialRetailLoanForm(application) {
       ]),
   );
 
-  return {
+  const mergedForm = {
     ...initialForm,
     ...applicationFields,
-    ...savedForm,
+    ...savedFormFields,
     relatedParties: Array.isArray(savedForm.relatedParties)
       ? savedForm.relatedParties.map((party) => ({ ...blankRelatedParty(), ...party }))
       : initialForm.relatedParties,
   };
+
+  if (!mergedForm.relatedParties.length) mergedForm.relatedParties = [blankRelatedParty()];
+  mergedForm.totalInterestRate = calculateTotalInterestRate(mergedForm.interestRate, mergedForm.offsetRate);
+  mergedForm.securityValue = getSynchronizedSecurityValue(mergedForm.securityAmount);
+  return mergedForm;
 }
 
 export function readSavedRetailLoanApplications() {
@@ -228,11 +446,31 @@ function RetailField({
   readOnly = false,
   placeholder,
   className = '',
+  inputPattern,
+  invalidInputMessage,
   ...inputProps
 }) {
+  const [inputError, setInputError] = useState('');
   const inputId = `field-${name}`;
+  const fieldError = inputError || error;
+  useEffect(() => {
+    setInputError('');
+  }, [value]);
+  const handleInputChange = (nextValue) => {
+    if (inputPattern && !inputPattern.test(nextValue)) {
+      setInputError(invalidInputMessage || `Enter a valid ${label.toLowerCase()}.`);
+      return;
+    }
+    setInputError('');
+    onChange(name, nextValue);
+  };
   return (
-    <div className={`retail-field ${error ? 'has-error' : ''} ${className}`}>
+    <div
+      className={`retail-field ${fieldError ? 'has-error' : ''} ${className}`}
+      onBlurCapture={type === 'date' ? (event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) inputProps.onBlur?.(event);
+      } : undefined}
+    >
       <label htmlFor={inputId} className="retail-field-label">
         <span>{label}</span>
         {required && <span className="retail-required" aria-hidden="true"> *</span>}
@@ -244,8 +482,8 @@ function RetailField({
             name={name}
             value={value ?? ''}
             onChange={(event) => onChange(name, event.target.value)}
-            aria-invalid={Boolean(error)}
-            aria-describedby={error ? `${inputId}-error` : undefined}
+            aria-invalid={Boolean(fieldError)}
+            aria-describedby={fieldError ? `${inputId}-error` : undefined}
             disabled={readOnly}
             required={required}
             className="retail-select-control"
@@ -265,24 +503,43 @@ function RetailField({
           </span>
         </div>
       ) : (
-        <input
-          id={inputId}
-          name={name}
-          type={type}
-          value={value ?? ''}
-          onChange={(event) => onChange(name, event.target.value)}
-          aria-invalid={Boolean(error)}
-          aria-describedby={error ? `${inputId}-error` : undefined}
-          readOnly={readOnly}
-          required={required}
-          placeholder={placeholder}
-          className="retail-input-control"
-          {...inputProps}
-        />
+        type === 'date' ? (
+          <LeadDatePicker
+            id={inputId}
+            name={name}
+            label={label}
+            value={value ?? ''}
+            onChange={(nextValue) => handleInputChange(nextValue)}
+            min={inputProps.min}
+            max={inputProps.max}
+            disabled={readOnly}
+            required={required}
+            invalid={Boolean(fieldError)}
+          />
+        ) : (
+          <input
+            {...inputProps}
+            id={inputId}
+            name={name}
+            type={type}
+            value={value ?? ''}
+            onChange={(event) => handleInputChange(event.target.value)}
+            onKeyDown={type === 'number' ? (event) => {
+              if (['e', 'E', '+', '-'].includes(event.key)) event.preventDefault();
+              inputProps.onKeyDown?.(event);
+            } : inputProps.onKeyDown}
+            aria-invalid={Boolean(fieldError)}
+            aria-describedby={fieldError ? `${inputId}-error` : undefined}
+            readOnly={readOnly}
+            required={required}
+            placeholder={placeholder}
+            className="retail-input-control"
+          />
+        )
       )}
-      {error && (
+      {fieldError && (
         <span className="retail-field-error-text" id={`${inputId}-error`} role="alert">
-          {error}
+          {fieldError}
         </span>
       )}
     </div>
@@ -343,6 +600,7 @@ export default function RetailLoanApplicationForm({
   const isEditMode = Boolean(application);
   const [form, setForm] = useState(() => createInitialRetailLoanForm(application));
   const [currentStep, setCurrentStep] = useState(0);
+  const [currentPartyIndex, setCurrentPartyIndex] = useState(0);
   const [errors, setErrors] = useState({});
   const [dirty, setDirty] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
@@ -350,6 +608,10 @@ export default function RetailLoanApplicationForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submissionLock = useRef(false);
   const repaymentRows = useMemo(() => getRepaymentRows(form), [form]);
+  const currentRelatedParty = form.relatedParties[currentPartyIndex];
+  const canAddRelatedParty = Boolean(
+    currentRelatedParty && Object.keys(validateRelatedParty(currentRelatedParty, currentPartyIndex)).length === 0,
+  );
 
   const sectionDescriptions = [
     'Enter the borrower identity, account information, and product details.',
@@ -363,10 +625,71 @@ export default function RetailLoanApplicationForm({
   ];
 
   const updateField = (name, value) => {
+    const nextForm = { ...form, [name]: value };
+    const changedFields = new Set([name]);
+    if (name === 'interestRate' || name === 'offsetRate') {
+      nextForm.totalInterestRate = calculateTotalInterestRate(
+        name === 'interestRate' ? value : form.interestRate,
+        name === 'offsetRate' ? value : form.offsetRate,
+      );
+      changedFields.add('totalInterestRate');
+    }
+    if (name === 'securityAmount') {
+      nextForm.securityValue = getSynchronizedSecurityValue(value);
+      changedFields.add('securityValue');
+    }
+
+    const dependentFields = {
+      effectiveDate: ['lastTransactionDate', 'sanctionedDate', 'securityEffectiveDate'],
+      lastTransactionDate: ['effectiveDate'],
+      sanctionedDate: ['effectiveDate', 'expiryDate', 'instalmentStartDate', 'instalmentEndDate'],
+      expiryDate: ['sanctionedDate', 'instalmentStartDate', 'instalmentEndDate'],
+      instalmentStartDate: ['sanctionedDate', 'expiryDate', 'instalmentEndDate'],
+      instalmentEndDate: ['instalmentStartDate', 'expiryDate'],
+      securityEffectiveDate: ['effectiveDate', 'valuationDate', 'inspectionDate'],
+      valuationDate: ['securityEffectiveDate'],
+      inspectionDate: ['securityEffectiveDate'],
+      insuranceIssueDate: ['insuranceExpiryDate'],
+      insuranceExpiryDate: ['insuranceIssueDate'],
+    };
+    (dependentFields[name] || []).forEach((field) => changedFields.add(field));
+
+    setForm(nextForm);
+    setDirty(true);
+    setSaveMessage('');
+    setErrors((current) => {
+      const currentStepErrors = RETAIL_STEPS.reduce(
+        (allErrors, _, index) => ({ ...allErrors, ...validateStep(index, nextForm) }),
+        {},
+      );
+      const fieldsToRefresh = new Set([...changedFields, ...Object.keys(current)]);
+      const next = { ...current };
+      fieldsToRefresh.forEach((field) => {
+        if (currentStepErrors[field]) next[field] = currentStepErrors[field];
+        else delete next[field];
+      });
+      return next;
+    });
+  };
+
+  const updateDisbursementField = (name, value) => {
     setForm((current) => ({ ...current, [name]: value }));
     setDirty(true);
     setSaveMessage('');
     setErrors((current) => {
+      const error = validateDisbursementField(form, name, value);
+      if (error) return { ...current, [name]: error };
+      if (!current[name]) return current;
+      const next = { ...current };
+      delete next[name];
+      return next;
+    });
+  };
+
+  const blurDisbursementField = (name) => {
+    setErrors((current) => {
+      const error = validateDisbursementField(form, name);
+      if (error) return { ...current, [name]: error };
       if (!current[name]) return current;
       const next = { ...current };
       delete next[name];
@@ -375,127 +698,234 @@ export default function RetailLoanApplicationForm({
   };
 
   const updateRelatedParty = (index, field, value) => {
-    setForm((current) => ({
-      ...current,
-      relatedParties: current.relatedParties.map((party, row) => (
-        row === index ? { ...party, [field]: value } : party
-      )),
-    }));
+    const inputPattern = field === 'customerNo'
+      ? CODE_INPUT_PATTERN
+      : ['firstName', 'middleName', 'lastName'].includes(field)
+        ? NAME_INPUT_PATTERN
+        : null;
+    if (inputPattern && !inputPattern.test(value)) {
+      setErrors((current) => ({
+        ...current,
+        [`relatedParties.${index}.${field}`]: field === 'customerNo'
+          ? 'Use letters, numbers, hyphens, and underscores only.'
+          : 'Use letters, spaces, apostrophes, or hyphens only.',
+      }));
+      return;
+    }
+    const nextParty = { ...form.relatedParties[index], [field]: value };
+    const nextForm = {
+      ...form,
+      relatedParties: form.relatedParties.map((party, row) => row === index ? nextParty : party),
+    };
+    setForm(nextForm);
     setDirty(true);
     setErrors((current) => {
       const next = { ...current };
-      delete next[`relatedParties.${index}.${field}`];
+      const partyErrors = validateRelatedParty(nextParty, index);
+      const key = `relatedParties.${index}.${field}`;
+      if (partyErrors[key]) next[key] = partyErrors[key];
+      else delete next[key];
       return next;
     });
   };
 
-  const validateStep = (step) => {
+  const blurRelatedPartyField = (index, field) => {
+    const partyErrors = validateRelatedParty(form.relatedParties[index], index);
+    const key = `relatedParties.${index}.${field}`;
+    setErrors((current) => {
+      if (partyErrors[key]) return { ...current, [key]: partyErrors[key] };
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const validateStep = (step, values = form) => {
     const next = {};
-    const namePattern = /^[\p{L}\p{M}]+(?:[ '-][\p{L}\p{M}]+)*$/u;
-    const validateNumbers = (fields, { positive = [], integers = [], percentages = [] } = {}) => {
-      fields.forEach((field) => {
-        const value = String(form[field] ?? '').trim();
-        if (!value) return;
-        const number = Number(value);
-        if (!Number.isFinite(number) || number < 0 || (positive.includes(field) && number <= 0)) {
-          next[field] = positive.includes(field)
-            ? 'Enter a number greater than zero.'
-            : 'Enter a valid non-negative number.';
-        } else if (integers.includes(field) && !Number.isInteger(number)) {
-          next[field] = 'Enter a whole number.';
-        } else if (percentages.includes(field) && number > 100) {
-          next[field] = 'Enter a percentage from 0 to 100.';
-        }
-      });
+    const putError = (field, error) => {
+      if (error) next[field] = error;
     };
-    const validateDates = (fields) => {
-      fields.forEach((field) => {
-        if (form[field] && !isValidDate(String(form[field]).trim())) {
-          next[field] = 'Enter a valid date.';
-        }
-      });
+    const validateWholeNumber = (field, label, { required = false, min = 0, max = 600 } = {}) => {
+      const text = String(values[field] ?? '').trim();
+      if (!text) {
+        if (required) next[field] = `${label} is required.`;
+        return;
+      }
+      const number = Number(text);
+      if (!/^\d+$/.test(text) || !Number.isSafeInteger(number) || number < min || number > max) {
+        next[field] = `${label} must be a whole number between ${min} and ${max}.`;
+      }
     };
 
     if (step === 0) {
-      if (!String(form.customerId || '').trim()) {
-        next.customerId = 'Customer ID is required.';
-      } else if (!/^CUS-\d{4}-\d{5}$/.test(String(form.customerId).trim())) {
-        next.customerId = 'Use customer ID format CUS-YYYY-NNNNN.';
+      putError('loanAccountNumber', validateCode(values.loanAccountNumber, 'Loan account number', { required: true }));
+      putError('effectiveDate', validateDate(values.effectiveDate, 'Effective date', true));
+      putError('customerId', !String(values.customerId ?? '').trim()
+        ? 'Customer ID is required.'
+        : /^CUS-\d{4}-\d{5}$/.test(String(values.customerId).trim())
+          ? ''
+          : 'Use customer ID format CUS-YYYY-NNNNN.');
+      if (!['Mr', 'Mrs', 'Ms', 'Dr', 'Other'].includes(values.title)) next.title = 'Select a valid title.';
+      putError('firstName', validateText(values.firstName, 'First name', { required: true, pattern: NAME_PATTERN }));
+      putError('middleName', validateText(values.middleName, 'Middle name', { pattern: NAME_PATTERN }));
+      putError('lastName', validateText(values.lastName, 'Last name', { required: true, pattern: NAME_PATTERN }));
+      putError('productCode', validateCode(values.productCode, 'Product code', { required: true }));
+      putError('productName', validateText(values.productName, 'Product description', { required: true }));
+      putError('schemeCode', validateCode(values.schemeCode, 'Scheme code', { required: true }));
+      putError('schemeDescription', validateText(values.schemeDescription, 'Scheme description', { required: true }));
+      putError('branch', validateText(values.branch, 'Branch', { minLength: 2 }));
+      if (!ACCOUNT_STATUS_OPTIONS.includes(values.accountStatus)) next.accountStatus = 'Select a valid account status.';
+      if (!MODE_OF_OPERATION_OPTIONS.includes(values.modeOfOperation)) next.modeOfOperation = 'Select a valid mode of operation.';
+      putError('lastTransactionDate', validateDate(values.lastTransactionDate, 'Last transaction date', true));
+      if (isValidDate(values.effectiveDate) && isValidDate(values.lastTransactionDate)
+        && values.lastTransactionDate < values.effectiveDate) {
+        next.lastTransactionDate = 'Last transaction date cannot precede the effective date.';
       }
-      if (!String(form.firstName || '').trim()) {
-        next.firstName = 'First name is required.';
-      } else if (!namePattern.test(String(form.firstName).trim())) {
-        next.firstName = 'Enter a valid first name.';
-      }
-      if (!String(form.lastName || '').trim()) {
-        next.lastName = 'Last name is required.';
-      } else if (!namePattern.test(String(form.lastName).trim())) {
-        next.lastName = 'Enter a valid last name.';
-      }
-      if (form.middleName && !namePattern.test(String(form.middleName).trim())) {
-        next.middleName = 'Enter a valid middle name.';
-      }
-      if (form.loanAccountNumber && !/^[A-Za-z0-9_-]+$/.test(String(form.loanAccountNumber).trim())) {
-        next.loanAccountNumber = 'Use letters, numbers, hyphens, and underscores only.';
-      }
-      validateDates(['effectiveDate', 'lastTransactionDate']);
     }
 
     if (step === 1) {
-      form.relatedParties.forEach((party, index) => {
-        ['firstName', 'middleName', 'lastName'].forEach((field) => {
-          const value = String(party[field] || '').trim();
-          if (value && !namePattern.test(value)) {
-            next[`relatedParties.${index}.${field}`] = 'Enter a valid name.';
-          }
-        });
+      values.relatedParties.forEach((party, index) => {
+        Object.assign(next, validateRelatedParty(party, index));
       });
     }
 
     if (step === 2 || step === 3) {
-      if (!String(form.loanAmount || '').trim()) {
-        next.loanAmount = 'Loan amount is required.';
+      putError('sanctionedDate', validateDate(values.sanctionedDate, 'Sanction date', true));
+      putError('sanctioningAuthority', validateText(values.sanctioningAuthority, 'Sanction authority', {
+        required: true,
+        maxLength: 50,
+        pattern: NAME_PATTERN,
+      }));
+      putError('loanAmount', validateAmount(values.loanAmount, 'Loan amount', true));
+      validateWholeNumber('tenureMonths', 'Tenure', { required: true, min: 1 });
+      putError('interestRate', validateRate(values.interestRate, 'Interest rate', true));
+      putError('offsetRate', validateRate(values.offsetRate, 'Offset rate'));
+      putError('totalInterestRate', values.totalInterestRate
+        ? validateRate(values.totalInterestRate, 'Total interest rate', true)
+        : '');
+      validateWholeNumber('moratorium', 'Moratorium', { min: 0 });
+      putError('expiryDate', validateDate(values.expiryDate, 'Expiry date', true));
+      putError('instalmentAmount', validateAmount(values.instalmentAmount, 'Instalment amount', true));
+      putError('instalmentStartDate', validateDate(values.instalmentStartDate, 'Instalment start date', true));
+      if (!['Monthly', 'Quarterly', 'User Defined'].includes(values.emiType)) {
+        next.emiType = 'Select a valid EMI frequency.';
       }
-      validateNumbers(
-        ['loanAmount', 'instalmentAmount', 'bulletPayment', 'interestRate', 'offsetRate', 'totalInterestRate', 'tenureMonths', 'moratorium'],
-        {
-          positive: ['loanAmount'],
-          integers: ['tenureMonths', 'moratorium'],
-          percentages: ['interestRate', 'offsetRate', 'totalInterestRate'],
-        },
-      );
-      validateDates(['sanctionedDate', 'expiryDate', 'instalmentStartDate', 'instalmentEndDate']);
-      if (form.expiryDate && form.sanctionedDate && form.expiryDate < form.sanctionedDate) {
-        next.expiryDate = 'Expiry date must be on or after the sanctioned date.';
+      putError('bulletPayment', validateAmount(values.bulletPayment, 'Bullet payment'));
+      putError('instalmentEndDate', validateDate(values.instalmentEndDate, 'Instalment end date', true));
+      if (isValidDate(values.effectiveDate) && isValidDate(values.sanctionedDate)
+        && values.sanctionedDate < values.effectiveDate) {
+        next.sanctionedDate = 'Sanction date cannot precede the effective date.';
       }
-      if (form.instalmentStartDate && form.instalmentEndDate && form.instalmentEndDate < form.instalmentStartDate) {
-        next.instalmentEndDate = 'End date must be on or after the start date.';
+      if (isValidDate(values.sanctionedDate) && isValidDate(values.expiryDate)
+        && values.expiryDate <= values.sanctionedDate) {
+        next.expiryDate = 'Expiry date must be after the sanction date.';
+      }
+      if (isValidDate(values.sanctionedDate) && isValidDate(values.instalmentStartDate)
+        && values.instalmentStartDate < values.sanctionedDate) {
+        next.instalmentStartDate = 'Instalment start date cannot precede the sanction date.';
+      }
+      if (isValidDate(values.expiryDate) && isValidDate(values.instalmentStartDate)
+        && values.instalmentStartDate > values.expiryDate) {
+        next.instalmentStartDate = 'Instalment start date cannot be after the expiry date.';
+      }
+      if (isValidDate(values.instalmentStartDate) && isValidDate(values.instalmentEndDate)
+        && values.instalmentEndDate < values.instalmentStartDate) {
+        next.instalmentEndDate = 'Instalment end date cannot precede the start date.';
+      }
+      if (isValidDate(values.expiryDate) && isValidDate(values.instalmentEndDate)
+        && values.instalmentEndDate > values.expiryDate) {
+        next.instalmentEndDate = 'Instalment end date cannot be after the expiry date.';
       }
     }
 
+    if (step === 4) {
+      putError('purposeCode', validateCode(values.purposeCode, 'Purpose code', { required: true }));
+      if (!['Yes', 'No'].includes(values.prioritySector)) next.prioritySector = 'Select Yes or No for priority sector.';
+      putError('prioritySectorCode', validateCode(values.prioritySectorCode, 'Priority sector code', { required: true }));
+      putError('industryType', validateText(values.industryType, 'Industry type', { required: true }));
+      putError('industrySubType', validateText(values.industrySubType, 'Industry sub type', { required: true }));
+      if (!['Yes', 'No'].includes(values.physicallyChallenged)) {
+        next.physicallyChallenged = 'Select Yes or No for physically challenged.';
+      }
+      putError('termCode', validateCode(values.termCode, 'Term code', { required: true }));
+    }
+
     if (step === 5) {
-      validateNumbers(['securityAmount', 'marginPercent', 'valuationAmount'], {
-        percentages: ['marginPercent'],
-      });
-      validateDates(['securityEffectiveDate', 'valuationDate', 'inspectionDate']);
-      if (form.pincode && !/^\d{6}$/.test(String(form.pincode).trim())) {
-        next.pincode = 'Enter a 6-digit PIN code.';
+      putError('securityId', validateCode(values.securityId, 'Security ID', { required: true }));
+      putError('securityType', validateText(values.securityType, 'Security type', { required: true }));
+      putError('securityEffectiveDate', validateDate(values.securityEffectiveDate, 'Security effective date', true));
+      putError('assetType', validateText(values.assetType, 'Asset type', { required: true }));
+      putError('securityAmount', validateAmount(values.securityAmount, 'Security amount', true));
+      putError('marginPercent', validateRate(values.marginPercent, 'Margin', true));
+      putError('assetAddress', validateText(values.assetAddress, 'Address', {
+        required: true,
+        maxLength: 125,
+        pattern: ADDRESS_PATTERN,
+      }));
+      putError('assetAddressLine2', validateText(values.assetAddressLine2, 'Address line 2', {
+        required: true,
+        maxLength: 125,
+        pattern: ADDRESS_PATTERN,
+      }));
+      putError('city', validateText(values.city, 'City', { required: true }));
+      putError('state', validateText(values.state, 'State', { required: true }));
+      putError('pincode', /^\d{6}$/.test(String(values.pincode ?? '').trim()) ? '' : 'Enter a 6-digit PIN code.');
+      putError('valuationAmount', validateAmount(values.valuationAmount, 'Valuation amount', true));
+      putError('valuerName', validateText(values.valuerName, 'Valuer name', { required: true, pattern: NAME_PATTERN }));
+      putError('valuationDate', validateDate(values.valuationDate, 'Valuation date', true));
+      putError('inspectionBy', validateText(values.inspectionBy, 'Inspection by', { required: true }));
+      putError('inspectionDate', validateDate(values.inspectionDate, 'Inspection date', true));
+      if (!String(values.inspectionReportName ?? '').trim()) {
+        next.inspectionReportName = 'Inspection report is required.';
+      } else if (!/\.(pdf|jpe?g|png)$/i.test(String(values.inspectionReportName).trim())) {
+        next.inspectionReportName = 'Select a PDF, JPG, or PNG inspection report.';
+      }
+      if (isValidDate(values.effectiveDate) && isValidDate(values.securityEffectiveDate)
+        && values.securityEffectiveDate < values.effectiveDate) {
+        next.securityEffectiveDate = 'Security effective date cannot precede the effective date.';
+      }
+      if (isValidDate(values.securityEffectiveDate) && isValidDate(values.valuationDate)
+        && values.valuationDate < values.securityEffectiveDate) {
+        next.valuationDate = 'Valuation date cannot precede the security effective date.';
+      }
+      if (isValidDate(values.securityEffectiveDate) && isValidDate(values.inspectionDate)
+        && values.inspectionDate < values.securityEffectiveDate) {
+        next.inspectionDate = 'Inspection date cannot precede the security effective date.';
       }
     }
 
     if (step === 6) {
-      validateNumbers(['securityValue', 'premiumAmount', 'sumAssured']);
-      validateDates(['insuranceIssueDate', 'insuranceExpiryDate']);
-      if (form.insuranceIssueDate && form.insuranceExpiryDate && form.insuranceExpiryDate < form.insuranceIssueDate) {
-        next.insuranceExpiryDate = 'Expiry date must be on or after the issue date.';
+      putError('securityValue', validateAmount(values.securityValue, 'Security value', true));
+      putError('premiumAmount', validateAmount(values.premiumAmount, 'Premium amount', true));
+      putError('insuranceCompany', validateText(values.insuranceCompany, 'Insurance company', { required: true }));
+      putError('sumAssured', validateAmount(values.sumAssured, 'Sum assured', true));
+      putError('policyNumber', validatePolicyNumber(values.policyNumber));
+      putError('insuranceExpiryDate', validateDate(values.insuranceExpiryDate, 'Insurance expiry date', true));
+      putError('insuranceIssueDate', validateDate(values.insuranceIssueDate, 'Insurance issue date', true));
+      if (isValidDate(values.insuranceIssueDate) && isValidDate(values.insuranceExpiryDate)
+        && values.insuranceExpiryDate <= values.insuranceIssueDate) {
+        next.insuranceExpiryDate = 'Insurance expiry date must be after the issue date.';
       }
     }
 
     if (step === 7) {
-      validateNumbers(['disbursementAmount']);
-      if (form.ifscCode && !/^[A-Z]{4}0[A-Z0-9]{6}$/i.test(String(form.ifscCode).trim())) {
-        next.ifscCode = 'Enter a valid 11-character IFSC code.';
-      }
+      [
+        'disbursementMode',
+        'disbursementAccountNumber',
+        'ifscCode',
+        'bankName',
+        'beneficiaryAccountName',
+        'beneficiaryMobileNumber',
+        'disbursementAmount',
+      ].forEach((field) => {
+        const error = validateDisbursementField(values, field);
+        if (error) next[field] = error;
+      });
+      putError('remarks', validateText(values.remarks, 'Remarks', {
+        minLength: 1,
+        maxLength: 250,
+        pattern: REMARKS_PATTERN,
+      }));
     }
 
     return next;
@@ -516,6 +946,19 @@ export default function RetailLoanApplicationForm({
     }
     setErrors({});
     setCurrentStep(target);
+  };
+
+  const blurField = (name) => {
+    const allErrors = RETAIL_STEPS.reduce(
+      (combined, _, index) => ({ ...combined, ...validateStep(index) }),
+      {},
+    );
+    setErrors((current) => {
+      if (allErrors[name]) return { ...current, [name]: allErrors[name] };
+      const next = { ...current };
+      delete next[name];
+      return next;
+    });
   };
 
   const cancel = () => {
@@ -599,8 +1042,17 @@ export default function RetailLoanApplicationForm({
       [],
       ['purposeCode', 'prioritySector', 'prioritySectorCode', 'industryType', 'industrySubType', 'physicallyChallenged', 'termCode'],
       ['securityId', 'securityType', 'securityEffectiveDate', 'assetType', 'securityAmount', 'marginPercent', 'assetAddress', 'assetAddressLine2', 'city', 'state', 'pincode', 'valuationAmount', 'valuerName', 'valuationDate', 'inspectionBy', 'inspectionDate', 'inspectionReportName'],
-      ['securityValue', 'insuranceCompany', 'policyNumber', 'insuranceIssueDate', 'premiumAmount', 'sumAssured', 'insuranceExpiryDate'],
-      ['disbursementAccountNumber', 'disbursementAccountType', 'bankName', 'ifscCode', 'disbursementMode', 'disbursementAmount'],
+      ['insuranceCompany', 'policyNumber', 'insuranceIssueDate', 'premiumAmount', 'sumAssured', 'insuranceExpiryDate'],
+      [
+        'disbursementMode',
+        'disbursementAccountNumber',
+        'ifscCode',
+        'bankName',
+        'beneficiaryAccountName',
+        'beneficiaryMobileNumber',
+        'disbursementAmount',
+        'remarks',
+      ],
     ];
     setForm((current) => {
       const cleared = { ...current };
@@ -609,23 +1061,31 @@ export default function RetailLoanApplicationForm({
           ? [blankRelatedParty()]
           : '';
       });
+      if (currentStep === 5) cleared.securityValue = '';
       return cleared;
     });
+    if (currentStep === 1) setCurrentPartyIndex(0);
     setErrors({});
     setDirty(true);
   };
 
-  const input = (label, name, options = {}) => (
-    <RetailField
-      key={name}
-      label={label}
-      name={name}
-      value={form[name]}
-      onChange={updateField}
-      error={errors[name]}
-      {...options}
-    />
-  );
+  const input = (label, name, options = {}) => {
+    const [inputPattern, invalidInputMessage] = INPUT_VALIDATION[name] || [];
+    return (
+      <RetailField
+        key={name}
+        label={label}
+        name={name}
+        value={form[name]}
+        onChange={updateField}
+        onBlur={() => blurField(name)}
+        error={errors[name]}
+        inputPattern={inputPattern}
+        invalidInputMessage={invalidInputMessage}
+        {...options}
+      />
+    );
+  };
 
   return (
     <AppShell title={isEditMode ? 'Edit Retail Loan Application' : 'Retail Loan Application'}>
@@ -701,14 +1161,15 @@ export default function RetailLoanApplicationForm({
                       <h3 className="retail-section-title">Application Information</h3>
                     </div>
                     <div className="retail-grid two-column">
-                      {input('Loan Account Number', 'loanAccountNumber', { placeholder: 'e.g. RL-2026-001' })}
-                      {input('Effective Date', 'effectiveDate', { type: 'date' })}
-                      {input('Customer ID', 'customerId', { required: true, placeholder: 'CUS-YYYY-NNNNN' })}
-                      {input('Branch', 'branch', { placeholder: 'Branch code or location' })}
+                      {input('Loan Account Number', 'loanAccountNumber', { required: true, maxLength: 30, placeholder: 'e.g. RL-2026-001' })}
+                      {input('Effective Date', 'effectiveDate', { type: 'date', required: true })}
+                      {input('Customer ID', 'customerId', { required: true, maxLength: 14, placeholder: 'CUS-YYYY-NNNNN' })}
+                      {input('Branch', 'branch', { maxLength: 50, placeholder: 'Branch code or location' })}
                       {input('Account Status', 'accountStatus', {
-                        options: ['Draft', 'Pending', 'In review', 'Approved', 'Disbursed', 'Awaiting KYC', 'Returned', 'Rejected', 'Active', 'Closed'],
+                        options: ACCOUNT_STATUS_OPTIONS,
+                        required: true,
                       })}
-                      {input('Last Transaction Date', 'lastTransactionDate', { type: 'date' })}
+                      {input('Last Transaction Date', 'lastTransactionDate', { type: 'date', min: form.effectiveDate, required: true, max: getTodayDate() })}
                     </div>
                   </section>
 
@@ -718,10 +1179,10 @@ export default function RetailLoanApplicationForm({
                       <h3 className="retail-section-title">Borrower Information</h3>
                     </div>
                     <div className="retail-grid borrower-grid">
-                      {input('Title', 'title', { options: ['Mr', 'Mrs', 'Ms', 'Dr', 'Other'] })}
-                      {input('First Name', 'firstName', { required: true, placeholder: 'Enter first name' })}
-                      {input('Middle Name', 'middleName', { placeholder: 'Enter middle name' })}
-                      {input('Last Name', 'lastName', { required: true, placeholder: 'Enter last name' })}
+                      {input('Title', 'title', { options: ['Mr', 'Mrs', 'Ms', 'Dr', 'Other'], required: true })}
+                      {input('First Name', 'firstName', { required: true, maxLength: 50, placeholder: 'Enter first name' })}
+                      {input('Middle Name', 'middleName', { maxLength: 50, placeholder: 'Enter middle name' })}
+                      {input('Last Name', 'lastName', { required: true, maxLength: 50, placeholder: 'Enter last name' })}
                     </div>
                   </section>
 
@@ -731,12 +1192,13 @@ export default function RetailLoanApplicationForm({
                       <h3 className="retail-section-title">Loan Product Information</h3>
                     </div>
                     <div className="retail-grid two-column">
-                      {input('Product Code', 'productCode')}
-                      {input('Product Description', 'productName')}
-                      {input('Scheme Code', 'schemeCode')}
-                      {input('Scheme Description', 'schemeDescription')}
+                      {input('Product Code', 'productCode', { required: true, maxLength: 30 })}
+                      {input('Product Description', 'productName', { required: true, maxLength: 50 })}
+                      {input('Scheme Code', 'schemeCode', { required: true, maxLength: 30 })}
+                      {input('Scheme Description', 'schemeDescription', { required: true, maxLength: 50 })}
                       {input('Mode of Operation', 'modeOfOperation', {
-                        options: ['Single', 'Joint', 'Either or Survivor', 'Anyone or Survivor'],
+                        options: MODE_OF_OPERATION_OPTIONS,
+                        required: true,
                       })}
                     </div>
                   </section>
@@ -754,12 +1216,17 @@ export default function RetailLoanApplicationForm({
                     <button
                       type="button"
                       className="retail-btn-secondary add-btn"
+                      disabled={!canAddRelatedParty}
                       onClick={() => {
                         setForm((current) => ({
                           ...current,
                           relatedParties: [...current.relatedParties, blankRelatedParty()],
                         }));
+                        setCurrentPartyIndex(form.relatedParties.length);
                         setDirty(true);
+                        setErrors((current) => Object.fromEntries(
+                          Object.entries(current).filter(([field]) => !field.startsWith('relatedParties.')),
+                        ));
                       }}
                     >
                       <Plus size={15} aria-hidden="true" /> Add Related Party
@@ -770,28 +1237,28 @@ export default function RetailLoanApplicationForm({
                       <thead>
                         <tr>
                           <th style={{ width: 44 }}>Sr.</th>
-                          <th>Name Type</th>
-                          <th>Relation</th>
-                          <th>Customer No</th>
-                          <th>Sal</th>
-                          <th>First Name</th>
+                          <th>Name Type <span className="retail-required">*</span></th>
+                          <th>Relation <span className="retail-required">*</span></th>
+                          <th>Customer No <span className="retail-required">*</span></th>
+                          <th>Sal <span className="retail-required">*</span></th>
+                          <th>First Name <span className="retail-required">*</span></th>
                           <th>Middle Name</th>
-                          <th>Last Name</th>
+                          <th>Last Name <span className="retail-required">*</span></th>
                           <th style={{ width: 48 }} aria-label="Actions" />
                         </tr>
                       </thead>
                       <tbody>
-                        {form.relatedParties.map((party, index) => (
+                        {form.relatedParties.map((party, index) => index === currentPartyIndex ? (
                           <tr key={party.id || index}>
                             <td className="row-number">{index + 1}</td>
                             {[
-                              ['nameType', ['Applicant', 'Guarantor', 'Co-applicant', 'Nominee']],
-                              ['relation', ['Spouse', 'Parent', 'Sibling', 'Child', 'Other']],
-                              ['customerNo'],
-                              ['salutation', ['Mr', 'Mrs', 'Ms', 'Dr']],
-                              ['firstName'],
-                              ['middleName'],
-                              ['lastName'],
+                              ['nameType', PARTY_NAME_TYPE_OPTIONS, true],
+                              ['relation', PARTY_RELATION_OPTIONS, true],
+                              ['customerNo', null, true],
+                              ['salutation', SALUTATION_OPTIONS, true],
+                              ['firstName', null, true],
+                              ['middleName', null, false],
+                              ['lastName', null, true],
                             ].map(([field, options]) => (
                               <td key={field}>
                                 {options ? (
@@ -800,6 +1267,12 @@ export default function RetailLoanApplicationForm({
                                       aria-label={`${field} for related party ${index + 1}`}
                                       value={party[field] || ''}
                                       onChange={(event) => updateRelatedParty(index, field, event.target.value)}
+                                      onBlur={() => blurRelatedPartyField(index, field)}
+                                      aria-required={field !== 'middleName'}
+                                      aria-invalid={Boolean(errors[`relatedParties.${index}.${field}`])}
+                                      aria-describedby={errors[`relatedParties.${index}.${field}`]
+                                        ? `related-party-${index}-${field}-error`
+                                        : undefined}
                                       className="table-select"
                                     >
                                       <option value="">Select</option>
@@ -814,13 +1287,23 @@ export default function RetailLoanApplicationForm({
                                     aria-label={`${field} for related party ${index + 1}`}
                                     value={party[field] || ''}
                                     aria-invalid={Boolean(errors[`relatedParties.${index}.${field}`])}
+                                    aria-required={field !== 'middleName'}
                                     onChange={(event) => updateRelatedParty(index, field, event.target.value)}
+                                    onBlur={() => blurRelatedPartyField(index, field)}
                                     className="table-input"
                                     placeholder={field}
+                                    maxLength={field === 'customerNo' ? 30 : 50}
+                                    aria-describedby={errors[`relatedParties.${index}.${field}`]
+                                      ? `related-party-${index}-${field}-error`
+                                      : undefined}
                                   />
                                 )}
                                 {errors[`relatedParties.${index}.${field}`] && (
-                                  <small className="retail-field-error-text">
+                                  <small
+                                    className="retail-field-error-text"
+                                    id={`related-party-${index}-${field}-error`}
+                                    role="alert"
+                                  >
                                     {errors[`relatedParties.${index}.${field}`]}
                                   </small>
                                 )}
@@ -831,10 +1314,15 @@ export default function RetailLoanApplicationForm({
                                 className="retail-icon-btn danger"
                                 type="button"
                                 onClick={() => {
-                                  setForm((current) => ({
-                                    ...current,
-                                    relatedParties: current.relatedParties.filter((_, row) => row !== index),
-                                  }));
+                                  const remaining = form.relatedParties.filter((_, row) => row !== index);
+                                  setForm({
+                                    ...form,
+                                    relatedParties: remaining.length ? remaining : [blankRelatedParty()],
+                                  });
+                                  setCurrentPartyIndex(Math.max(0, Math.min(index - 1, remaining.length - 1)));
+                                  setErrors((current) => Object.fromEntries(
+                                    Object.entries(current).filter(([field]) => !field.startsWith('relatedParties.')),
+                                  ));
                                   setDirty(true);
                                 }}
                                 aria-label={`Remove related party ${index + 1}`}
@@ -844,7 +1332,7 @@ export default function RetailLoanApplicationForm({
                               </button>
                             </td>
                           </tr>
-                        ))}
+                        ) : null)}
                       </tbody>
                     </table>
                   </div>
@@ -858,20 +1346,20 @@ export default function RetailLoanApplicationForm({
                     <h3 className="retail-section-title">Loan Details & Terms</h3>
                   </div>
                   <div className="retail-grid two-column">
-                    {input('Sanctioned Date', 'sanctionedDate', { type: 'date' })}
-                    {input('Sanctioning Authority', 'sanctioningAuthority', { placeholder: 'e.g. Branch Manager' })}
+                  {input('Sanction Date', 'sanctionedDate', { type: 'date', min: form.effectiveDate, required: true })}
+                  {input('Sanction Authority', 'sanctioningAuthority', { required: true, maxLength: 50, placeholder: 'e.g. Branch Manager' })}
                     {input('Loan Amount (₹)', 'loanAmount', { type: 'number', min: '0', step: '0.01', required: true, placeholder: '0.00' })}
-                    {input('Tenure (months)', 'tenureMonths', { type: 'number', min: '1', step: '1', placeholder: 'e.g. 36' })}
-                    {input('Interest Rate %', 'interestRate', { type: 'number', min: '0', step: '0.01', placeholder: 'e.g. 10.50' })}
-                    {input('Offset Rate %', 'offsetRate', { type: 'number', min: '0', step: '0.01', placeholder: 'e.g. 0.00' })}
-                    {input('Total Interest Rate %', 'totalInterestRate', { type: 'number', min: '0', step: '0.01', placeholder: 'e.g. 10.50' })}
-                    {input('Moratorium (months)', 'moratorium', { type: 'number', min: '0', step: '1', placeholder: '0' })}
-                    {input('Expiry Date', 'expiryDate', { type: 'date' })}
-                    {input('Instalment Amount (₹)', 'instalmentAmount', { type: 'number', min: '0', step: '0.01', placeholder: '0.00' })}
-                    {input('Instalment Start Date', 'instalmentStartDate', { type: 'date' })}
-                    {input('EMI Frequency', 'emiType', { options: ['Monthly', 'Quarterly', 'User Defined'] })}
+                  {input('Tenure (months)', 'tenureMonths', { type: 'number', min: '1', max: '600', step: '1', required: true, placeholder: 'e.g. 36' })}
+                  {input('Interest Rate %', 'interestRate', { type: 'number', min: '0', max: '100', step: '0.01', required: true, placeholder: 'e.g. 10.50' })}
+                  {input('Offset Rate %', 'offsetRate', { type: 'number', min: '0', max: '100', step: '0.01', placeholder: 'e.g. 0.00' })}
+                  {input('Total Interest Rate %', 'totalInterestRate', { type: 'number', min: '0', max: '100', step: '0.01', required: true, readOnly: true })}
+                  {input('Moratorium (months)', 'moratorium', { type: 'number', min: '0', max: '600', step: '1', placeholder: '0' })}
+                  {input('Expiry Date', 'expiryDate', { type: 'date', min: dateAfter(form.sanctionedDate), required: true })}
+                  {input('Instalment Amount (₹)', 'instalmentAmount', { type: 'number', min: '0', step: '0.01', required: true, placeholder: '0.00' })}
+                  {input('Instalment Start Date', 'instalmentStartDate', { type: 'date', min: form.sanctionedDate, max: form.expiryDate, required: true })}
+                  {input('EMI Frequency', 'emiType', { options: ['Monthly', 'Quarterly', 'User Defined'], required: true })}
                     {input('Bullet Payment (₹)', 'bulletPayment', { type: 'number', min: '0', step: '0.01', placeholder: '0.00' })}
-                    {input('Instalment End Date', 'instalmentEndDate', { type: 'date' })}
+                  {input('Instalment End Date', 'instalmentEndDate', { type: 'date', min: form.instalmentStartDate, max: form.expiryDate, required: true })}
                   </div>
                 </section>
               )}
@@ -884,9 +1372,9 @@ export default function RetailLoanApplicationForm({
                       <h3 className="retail-section-title">Repayment Calculation Parameters</h3>
                     </div>
                     <div className="retail-grid three-column">
-                      {input('Loan Amount (₹)', 'loanAmount', { type: 'number', min: '0', step: '0.01', placeholder: '0.00' })}
-                      {input('Tenure (months)', 'tenureMonths', { type: 'number', min: '1', step: '1', placeholder: 'Months' })}
-                      {input('Instalment Start Date', 'instalmentStartDate', { type: 'date' })}
+                      {input('Loan Amount (₹)', 'loanAmount', { type: 'number', min: '0', step: '0.01', required: true, placeholder: '0.00' })}
+                      {input('Tenure (months)', 'tenureMonths', { type: 'number', min: '1', max: '600', step: '1', required: true, placeholder: 'Months' })}
+                      {input('Instalment Start Date', 'instalmentStartDate', { type: 'date', min: form.sanctionedDate, max: form.expiryDate, required: true })}
                     </div>
                   </section>
 
@@ -938,13 +1426,13 @@ export default function RetailLoanApplicationForm({
                     <h3 className="retail-section-title">Classification & Priority Sector</h3>
                   </div>
                   <div className="retail-grid two-column">
-                    {input('Purpose Code', 'purposeCode', { placeholder: 'e.g. PUR-01' })}
-                    {input('Priority Sector [Y/N]', 'prioritySector', { options: ['Yes', 'No'] })}
-                    {input('Priority Sector Code', 'prioritySectorCode', { placeholder: 'e.g. PSC-02' })}
-                    {input('Industry Type', 'industryType', { placeholder: 'e.g. Services' })}
-                    {input('Industry Sub Type', 'industrySubType', { placeholder: 'e.g. Retail Trade' })}
-                    {input('Physically Challenged', 'physicallyChallenged', { options: ['Yes', 'No'] })}
-                    {input('Term Code', 'termCode', { placeholder: 'e.g. TRM-01' })}
+                    {input('Purpose Code', 'purposeCode', { required: true, maxLength: 30, placeholder: 'e.g. PUR-01' })}
+                    {input('Priority Sector [Y/N]', 'prioritySector', { options: ['Yes', 'No'], required: true })}
+                    {input('Priority Sector Code', 'prioritySectorCode', { required: true, maxLength: 30, placeholder: 'e.g. PSC-02' })}
+                    {input('Industry Type', 'industryType', { required: true, maxLength: 50, placeholder: 'e.g. Services' })}
+                    {input('Industry Sub Type', 'industrySubType', { required: true, maxLength: 50, placeholder: 'e.g. Retail Trade' })}
+                    {input('Physically Challenged', 'physicallyChallenged', { options: ['Yes', 'No'], required: true })}
+                    {input('Term Code', 'termCode', { required: true, maxLength: 30, placeholder: 'e.g. TRM-01' })}
                   </div>
                 </section>
               )}
@@ -957,12 +1445,12 @@ export default function RetailLoanApplicationForm({
                       <h3 className="retail-section-title">Security & Collateral Information</h3>
                     </div>
                     <div className="retail-grid two-column">
-                      {input('Security ID', 'securityId', { placeholder: 'e.g. SEC-101' })}
-                      {input('Security Type', 'securityType', { placeholder: 'e.g. Immovable Property' })}
-                      {input('Effective Date', 'securityEffectiveDate', { type: 'date' })}
-                      {input('Asset Type', 'assetType', { placeholder: 'e.g. Residential Apartment' })}
-                      {input('Security Amount (₹)', 'securityAmount', { type: 'number', min: '0', step: '0.01', placeholder: '0.00' })}
-                      {input('Margin %', 'marginPercent', { type: 'number', min: '0', max: '100', step: '0.01', placeholder: 'e.g. 20' })}
+                      {input('Security ID', 'securityId', { required: true, maxLength: 30, placeholder: 'e.g. SEC-101' })}
+                      {input('Security Type', 'securityType', { required: true, maxLength: 50, placeholder: 'e.g. Immovable Property' })}
+                      {input('Effective Date', 'securityEffectiveDate', { type: 'date', min: form.effectiveDate, required: true })}
+                      {input('Asset Type', 'assetType', { required: true, maxLength: 50, placeholder: 'e.g. Residential Apartment' })}
+                      {input('Security Amount (₹)', 'securityAmount', { type: 'number', min: '0', step: '0.01', required: true, placeholder: '0.00' })}
+                      {input('Margin %', 'marginPercent', { type: 'number', min: '0', max: '100', step: '0.01', required: true, placeholder: 'e.g. 20' })}
                     </div>
                   </section>
 
@@ -971,18 +1459,20 @@ export default function RetailLoanApplicationForm({
                       <h3 className="retail-section-title">Asset Location & Valuation</h3>
                     </div>
                     <div className="retail-grid two-column">
-                      {input('Address', 'assetAddress', { placeholder: 'Address line 1' })}
-                      {input('Address Line 2', 'assetAddressLine2', { placeholder: 'Address line 2' })}
-                      {input('City', 'city', { placeholder: 'City' })}
-                      {input('State', 'state', { placeholder: 'State' })}
-                      {input('Pincode', 'pincode', { inputMode: 'numeric', maxLength: 6, placeholder: '6-digit PIN' })}
-                      {input('Valuation Amount (₹)', 'valuationAmount', { type: 'number', min: '0', step: '0.01', placeholder: '0.00' })}
-                      {input('Valuer Name', 'valuerName', { placeholder: 'Certified Valuer Name' })}
-                      {input('Valuation Done On', 'valuationDate', { type: 'date' })}
-                      {input('Inspection By', 'inspectionBy', { placeholder: 'Inspector Name or Agency' })}
-                      {input('Inspection Done On', 'inspectionDate', { type: 'date' })}
+                      {input('Address', 'assetAddress', { required: true, maxLength: 125, placeholder: 'Address line 1' })}
+                      {input('Address Line 2', 'assetAddressLine2', { required: true, maxLength: 125, placeholder: 'Address line 2' })}
+                      {input('City', 'city', { required: true, maxLength: 50, placeholder: 'City' })}
+                      {input('State', 'state', { required: true, maxLength: 50, placeholder: 'State' })}
+                      {input('Pincode', 'pincode', { required: true, inputMode: 'numeric', maxLength: 6, placeholder: '6-digit PIN' })}
+                      {input('Valuation Amount (₹)', 'valuationAmount', { type: 'number', min: '0', step: '0.01', required: true, placeholder: '0.00' })}
+                      {input('Valuer Name', 'valuerName', { required: true, maxLength: 50, placeholder: 'Certified Valuer Name' })}
+                      {input('Valuation Done On', 'valuationDate', { type: 'date', min: form.securityEffectiveDate, required: true })}
+                      {input('Inspection By', 'inspectionBy', { required: true, maxLength: 50, placeholder: 'Inspector Name or Agency' })}
+                      {input('Inspection Done On', 'inspectionDate', { type: 'date', min: form.securityEffectiveDate, required: true })}
                       <div className="retail-field span-full">
-                        <label className="retail-field-label">Inspection Report</label>
+                        <label className="retail-field-label">
+                          Inspection Report <span className="retail-required" aria-hidden="true"> *</span>
+                        </label>
                         <label className="retail-file-picker">
                           <Upload size={16} aria-hidden="true" />
                           <span>{form.inspectionReportName || 'Click to select report document (.pdf, .jpg, .png)'}</span>
@@ -993,6 +1483,9 @@ export default function RetailLoanApplicationForm({
                             onChange={(event) => updateField('inspectionReportName', event.target.files?.[0]?.name || '')}
                           />
                         </label>
+                        {errors.inspectionReportName && (
+                          <span className="retail-field-error-text" role="alert">{errors.inspectionReportName}</span>
+                        )}
                       </div>
                     </div>
                   </section>
@@ -1006,13 +1499,13 @@ export default function RetailLoanApplicationForm({
                     <h3 className="retail-section-title">Insurance Policy & Coverage</h3>
                   </div>
                   <div className="retail-grid two-column">
-                    {input('Security Value (₹)', 'securityValue', { type: 'number', min: '0', step: '0.01', placeholder: '0.00' })}
-                    {input('Premium Amount (₹)', 'premiumAmount', { type: 'number', min: '0', step: '0.01', placeholder: '0.00' })}
-                    {input('Insurance Company', 'insuranceCompany', { placeholder: 'Insurer name' })}
-                    {input('Sum Assured (₹)', 'sumAssured', { type: 'number', min: '0', step: '0.01', placeholder: '0.00' })}
-                    {input('Policy Number', 'policyNumber', { placeholder: 'Policy number' })}
-                    {input('Insurance Expiry Date', 'insuranceExpiryDate', { type: 'date' })}
-                    {input('Insurance Issue Date', 'insuranceIssueDate', { type: 'date' })}
+                    {input('Security Value (₹)', 'securityValue', { type: 'number', min: '0', step: '0.01', required: true, readOnly: true })}
+                    {input('Premium Amount (₹)', 'premiumAmount', { type: 'number', min: '0', step: '0.01', required: true, placeholder: '0.00' })}
+                    {input('Insurance Company', 'insuranceCompany', { required: true, maxLength: 50, placeholder: 'Insurer name' })}
+                    {input('Sum Assured (₹)', 'sumAssured', { type: 'number', min: '0', step: '0.01', required: true, placeholder: '0.00' })}
+                    {input('Policy Number', 'policyNumber', { required: true, maxLength: 30, placeholder: 'Policy number' })}
+                    {input('Insurance Expiry Date', 'insuranceExpiryDate', { type: 'date', min: dateAfter(form.insuranceIssueDate), required: true })}
+                    {input('Insurance Issue Date', 'insuranceIssueDate', { type: 'date', required: true })}
                   </div>
                 </section>
               )}
@@ -1024,12 +1517,72 @@ export default function RetailLoanApplicationForm({
                     <h3 className="retail-section-title">Disbursement Account & Mode</h3>
                   </div>
                   <div className="retail-grid two-column">
-                    {input('Account Number', 'disbursementAccountNumber', { placeholder: 'Bank account number' })}
-                    {input('Account Type', 'disbursementAccountType', { options: ['Savings Account', 'Current Account'] })}
-                    {input('Bank Name', 'bankName', { placeholder: 'Bank name' })}
-                    {input('IFSC Code', 'ifscCode', { maxLength: 11, placeholder: '11-character IFSC' })}
-                    {input('Disbursement Mode', 'disbursementMode', { options: ['NEFT', 'RTGS', 'IMPS', 'Cheque'] })}
-                    {input('Disbursement Amount (₹)', 'disbursementAmount', { type: 'number', min: '0', step: '0.01', placeholder: '0.00' })}
+                    {input('Payment Mode', 'disbursementMode', {
+                      options: ['NEFT', 'RTGS', 'IMPS', 'Cheque'],
+                      required: true,
+                      onChange: updateDisbursementField,
+                      onBlur: () => blurDisbursementField('disbursementMode'),
+                    })}
+                  </div>
+                  <div className="retail-section-header">
+                    <h3 className="retail-section-title">Beneficiary Details</h3>
+                  </div>
+                  <div className="retail-grid two-column">
+                    {input('Account No', 'disbursementAccountNumber', {
+                      placeholder: 'Bank account number',
+                      inputMode: 'numeric',
+                      maxLength: 18,
+                      required: true,
+                      onChange: updateDisbursementField,
+                      onBlur: () => blurDisbursementField('disbursementAccountNumber'),
+                    })}
+                    {input('IFSC Code', 'ifscCode', {
+                      placeholder: '11-character IFSC',
+                      maxLength: 11,
+                      required: true,
+                      onChange: updateDisbursementField,
+                      onBlur: () => blurDisbursementField('ifscCode'),
+                    })}
+                    {input('Bank Name', 'bankName', {
+                      placeholder: 'Bank name',
+                      maxLength: 50,
+                      required: true,
+                      onChange: updateDisbursementField,
+                      onBlur: () => blurDisbursementField('bankName'),
+                    })}
+                    {input('Account Name', 'beneficiaryAccountName', {
+                      placeholder: 'Beneficiary account name',
+                      maxLength: 50,
+                      required: true,
+                      onChange: updateDisbursementField,
+                      onBlur: () => blurDisbursementField('beneficiaryAccountName'),
+                    })}
+                    {/* <button
+                      type="button"
+                      className="retail-btn-secondary"
+                      disabled
+                      title="Beneficiary account name lookup is not configured."
+                    >
+                      Beneficiary Account Name Lookup
+                    </button> */}
+                    {input('Mobile No', 'beneficiaryMobileNumber', {
+                      inputMode: 'numeric',
+                      placeholder: '10-digit mobile number',
+                      maxLength: 10,
+                      required: true,
+                      onChange: updateDisbursementField,
+                      onBlur: () => blurDisbursementField('beneficiaryMobileNumber'),
+                    })}
+                    {input('Amount (Rs.)', 'disbursementAmount', {
+                      type: 'number',
+                      min: '0',
+                      step: '0.01',
+                      placeholder: '0.00',
+                      required: true,
+                      onChange: updateDisbursementField,
+                      onBlur: () => blurDisbursementField('disbursementAmount'),
+                    })}
+                    {input('Remarks', 'remarks', { maxLength: 250, placeholder: 'Remarks' })}
                   </div>
                 </section>
               )}
@@ -1052,7 +1605,7 @@ export default function RetailLoanApplicationForm({
                 </div>
 
                 <div className="retail-actions-group">
-                  {(currentStep === 5 || currentStep === 6) && (
+                  {(currentStep === 5 || currentStep === 6 || currentStep === 7) && (
                     <button type="button" className="retail-btn-secondary" onClick={clearStep}>
                       Clear
                     </button>

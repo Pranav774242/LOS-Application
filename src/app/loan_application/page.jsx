@@ -198,7 +198,7 @@ export default function LoanDashboardPage() {
         ))
         : [updatedApplication, ...currentApplications];
     });
-    setApplicationSaveNotice(`${getApplicationId(updatedApplication)} was saved in this browser.`);
+    setApplicationSaveNotice('Application submitted successfully!');
     setPersistenceError('');
   };
 
@@ -209,14 +209,14 @@ export default function LoanDashboardPage() {
         ? { ...application, ...updatedApplication }
         : application
     )));
-    setApplicationSaveNotice(`${getApplicationId(updatedApplication)} was saved in this browser.`);
+    setApplicationSaveNotice('Application submitted successfully!');
     setPersistenceError('');
   };
 
   const createRetailLoanApplication = (newApplication) => {
     persistRetailLoanApplication(newApplication);
     setDashboardApplications((currentApplications) => [newApplication, ...currentApplications]);
-    setApplicationSaveNotice(`${getApplicationId(newApplication)} was saved in this browser.`);
+    setApplicationSaveNotice('Application submitted successfully!');
     setPersistenceError('');
       };
 
@@ -602,18 +602,19 @@ export default function LoanDashboardPage() {
           :global(.apply-button) {
             flex-shrink: 0;
             color: #ffffff !important;
-            background: #198754 !important;
-            border-color: #198754 !important;
+            background: #177e7a !important;
+            border-color: #177e7a !important;
+            box-shadow: 0 4px 12px rgba(23, 126, 122, 0.22);
           }
 
           :global(.apply-button:hover) {
             color: #ffffff !important;
-            background: #146c43 !important;
-            border-color: #13653f !important;
+            background: #0c6662 !important;
+            border-color: #0c6662 !important;
           }
 
           :global(.apply-button:focus-visible) {
-            outline: 3px solid #19875455;
+            outline: 3px solid rgba(23, 126, 122, 0.35);
             outline-offset: 3px;
           }
 

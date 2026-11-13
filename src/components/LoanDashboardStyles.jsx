@@ -10,18 +10,18 @@ export default function LoanDashboardStyles() {
           :global(.apply-button) {
             flex-shrink: 0;
             color: #ffffff !important;
-            background: #198754 !important;
-            border-color: #198754 !important;
+            background: #177e7a !important;
+            border-color: #177e7a !important;
           }
 
           :global(.apply-button:hover) {
             color: #ffffff !important;
-            background: #146c43 !important;
-            border-color: #13653f !important;
+            background: #177e7a !important;
+            border-color: #177e7a !important;
           }
 
           :global(.apply-button:focus-visible) {
-            outline: 3px solid #19875455;
+            outline: 3px solid #177e7a55;
             outline-offset: 3px;
           }
 

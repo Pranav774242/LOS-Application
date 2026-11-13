@@ -6,6 +6,7 @@ import { Banknote, CheckCircle2, FilePlus2, ArrowLeft, ArrowRight, Check, Plus, 
 import AppShell from './AppShell';
 import Card from './Card';
 import PageHeader from './PageHeader';
+import LeadDatePicker from './LeadDatePicker';
 import { getLoanProducts } from '../services/loanProducts';
 
 const currencyFormatter = new Intl.NumberFormat('en-IN', {
@@ -14,6 +15,15 @@ const currencyFormatter = new Intl.NumberFormat('en-IN', {
   maximumFractionDigits: 2,
 });
 export const GOLD_LOAN_STORAGE_KEY = 'los.goldLoanApplications';
+
+function getLimitTotal(inventoryItems) {
+  const total = inventoryItems.reduce((sum, item) => {
+    const text = String(item.limit ?? '').trim();
+    const value = Number(text);
+    return text && Number.isFinite(value) && value > 0 ? sum + value : sum;
+  }, 0);
+  return total > 0 ? String(Math.round(total * 100) / 100) : '';
+}
 
 export function isGoldLoanApplication(application) {
   return String(application.product || application.loanType || '').trim().toLowerCase() === 'gold loan';
@@ -89,11 +99,20 @@ export function createApplicationForm(application) {
     : Array.isArray(applicationSecurity.inventoryItems)
       ? applicationSecurity.inventoryItems
       : initialForm.security.inventoryItems;
-  const inventoryItems = savedInventoryItems.map((item, index) => ({
-    ...initialForm.security.inventoryItems[index],
-    ...(item && typeof item === 'object' ? item : {}),
-    id: item?.id || `inventory-${index + 1}`,
-  }));
+  const inventoryItems = (savedInventoryItems.length ? savedInventoryItems : initialForm.security.inventoryItems)
+    .map((item, index) => ({
+      ...initialForm.security.inventoryItems[index],
+      ...(item && typeof item === 'object' ? item : {}),
+      id: item?.id || `inventory-${index + 1}`,
+    }))
+    .filter((item) => Object.entries(item)
+      .some(([field, value]) => field !== 'id' && String(value ?? '').trim()));
+  if (inventoryItems.length === 0) {
+    inventoryItems.push(...initialForm.security.inventoryItems);
+  }
+  const limitTotal = getLimitTotal(inventoryItems);
+  const sanctionLimit = limitTotal;
+  const tenureMonths = savedForm.tenureMonths || application.tenureMonths || '';
   const nestedFields = new Set(['relatedParties', 'charges', 'basicDetails', 'security', 'disbursement']);
   const applicationFields = Object.fromEntries(
     Object.keys(initialForm)
@@ -116,15 +135,21 @@ export function createApplicationForm(application) {
     firstName: savedForm.firstName || application.firstName || nameParts[0] || '',
     lastName: savedForm.lastName || application.lastName
       || (nameParts.length > 1 ? nameParts.slice(1).join(' ') : ''),
-    sanctionLimit: savedForm.sanctionLimit || application.sanctionLimit
-      || String(application.amount ?? '').replace(/[^\d.]/g, ''),
+    sanctionLimit,
     relatedParties,
-    charges: { ...initialForm.charges, ...applicationCharges, ...savedCharges },
+    charges: {
+      ...initialForm.charges,
+      ...applicationCharges,
+      ...savedCharges,
+      sanctionLimit,
+      tenureMonths,
+    },
     basicDetails: { ...initialForm.basicDetails, ...applicationBasicDetails, ...savedBasicDetails },
     security: {
       ...initialForm.security,
       ...applicationSecurity,
       ...savedSecurity,
+      limitAvailable: limitTotal,
       inventoryItems,
     },
     disbursement: {
@@ -140,13 +165,40 @@ export function getApplicationId(application) {
 }
 
 export function getCustomerName(application) {
+  if (!application) return 'Not available';
+  const form = application.goldLoanForm || application.retailLoanForm || {};
   const borrower = application.borrower || application.customerDetails || {};
+
+  let title = form.title || borrower.title || application.title || '';
+  let firstName = form.firstName || borrower.firstName || application.firstName || '';
+  let lastName = form.lastName || borrower.lastName || application.lastName || '';
+
+  if (!firstName && (application.customer || application.customerName || borrower.fullName || borrower.name)) {
+    const rawName = (application.customer || application.customerName || borrower.fullName || borrower.name || '').trim();
+    const parts = rawName.split(/\s+/);
+    if (/^(mr|mrs|ms|dr|miss|shri|smt)\.?$/i.test(parts[0])) {
+      if (!title) title = parts[0];
+      firstName = parts[1] || '';
+      lastName = parts.slice(2).join(' ') || '';
+    } else {
+      firstName = parts[0] || '';
+      lastName = parts.slice(1).join(' ') || '';
+    }
+  }
+
+  let formattedTitle = title ? title.trim() : '';
+  if (/^(mr|mrs|ms|dr)$/i.test(formattedTitle)) {
+    formattedTitle = `${formattedTitle.charAt(0).toUpperCase()}${formattedTitle.slice(1).toLowerCase()}.`;
+  }
+
+  const combined = [formattedTitle, firstName, lastName].filter(Boolean).join(' ').trim();
+  if (combined) return combined;
+
   return (
     application.customer ||
     application.customerName ||
     borrower.fullName ||
     borrower.name ||
-    [borrower.firstName, borrower.lastName].filter(Boolean).join(' ') ||
     'Not available'
   );
 }
@@ -245,6 +297,10 @@ const codeInputPattern = /^[A-Za-z0-9_-]*$/;
 const nameError = 'Use letters only. Spaces, apostrophes, and hyphens are allowed.';
 const MIN_TEXT_LENGTH = 3;
 const MAX_TEXT_LENGTH = 125;
+const MAX_NAME_LENGTH = 50;
+const MAX_DESCRIPTION_LENGTH = 50;
+const MIN_BANK_ACCOUNT_LENGTH = 9;
+const MAX_BANK_ACCOUNT_LENGTH = 18;
 
 const createInitialForm = () => ({
   loanAccountNumber: '',
@@ -306,7 +362,7 @@ const createInitialForm = () => ({
     valuerDescription: '',
     marginPercent: '',
     limitAvailable: '',
-    inventoryItems: Array.from({ length: 5 }, (_, index) => ({
+    inventoryItems: Array.from({ length: 1 }, (_, index) => ({
       id: `inventory-${index + 1}`,
       itemId: '',
       ornamentDescription: '',
@@ -340,25 +396,33 @@ const isValidDate = (value) => {
     && date.getDate() === day;
 };
 
-function validateTextLength(key, value, label, errors, required = true) {
+function validateTextLength(
+  key,
+  value,
+  label,
+  errors,
+  required = true,
+  minLength = MIN_TEXT_LENGTH,
+  maxLength = MAX_TEXT_LENGTH,
+) {
   const text = String(value ?? '').trim();
   if (!text) {
     if (required) errors[key] = `${label} is required.`;
     return;
   }
-  if (text.length < MIN_TEXT_LENGTH || text.length > MAX_TEXT_LENGTH) {
-    errors[key] = `${label} must be between ${MIN_TEXT_LENGTH} and ${MAX_TEXT_LENGTH} characters.`;
+  if (text.length < minLength || text.length > maxLength) {
+    errors[key] = `${label} must be between ${minLength} and ${maxLength} characters.`;
   }
 }
 
-function validateName(key, value, label, errors, required = true) {
+function validateName(key, value, label, errors, required = true, maxLength = MAX_TEXT_LENGTH) {
   const text = String(value ?? '').trim();
   if (!text) {
     if (required) errors[key] = `${label} is required.`;
     return;
   }
-  if (text.length < MIN_TEXT_LENGTH || text.length > MAX_TEXT_LENGTH) {
-    errors[key] = `${label} must be between ${MIN_TEXT_LENGTH} and ${MAX_TEXT_LENGTH} characters.`;
+  if (text.length < MIN_TEXT_LENGTH || text.length > maxLength) {
+    errors[key] = `${label} must be between ${MIN_TEXT_LENGTH} and ${maxLength} characters.`;
     return;
   }
   if (!borrowerNamePattern.test(text)) {
@@ -379,8 +443,12 @@ function validateNumber(key, value, label, errors, { required = false, positive 
     if (required) errors[key] = `${label} is required.`;
     return;
   }
-  const number = Number(value);
-  if (!Number.isFinite(number) || number < 0 || (positive && number === 0)) {
+  const text = String(value).trim();
+  const number = Number(text);
+  if (!/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(text)
+    || !Number.isFinite(number)
+    || number < 0
+    || (positive && number === 0)) {
     errors[key] = `${label} must be a ${positive ? 'positive' : 'non-negative'} number.`;
   }
 }
@@ -433,13 +501,43 @@ function validateWholeNumber(key, value, label, errors, { required = false, min 
   }
 }
 
+function validateInventoryItem(item, index) {
+  const errors = {};
+  const prefix = `security.inventoryItems.${index}.`;
+  validateIdentifier(`${prefix}itemId`, item.itemId, 'Inventory item ID', errors);
+  validateTextLength(`${prefix}ornamentDescription`, item.ornamentDescription, 'Ornament description', errors, true, MIN_TEXT_LENGTH, MAX_DESCRIPTION_LENGTH);
+  validateNumber(`${prefix}grossWeight`, item.grossWeight, 'Gross weight', errors, { required: true, positive: true });
+  validateNumber(`${prefix}netWeight`, item.netWeight, 'Net weight', errors, { required: true, positive: true });
+  validateDate(`${prefix}appraisalDate`, item.appraisalDate, 'Appraisal date', errors, true);
+  if (!['18K', '22K', '24K'].includes(item.purity)) {
+    errors[`${prefix}purity`] = 'Select 18K, 22K, or 24K purity.';
+  }
+  validateNumber(`${prefix}rate`, item.rate, 'Rate', errors, { required: true, positive: true });
+  validateNumber(`${prefix}amount`, item.amount, 'Amount', errors, { required: true, positive: true });
+  validateNumber(`${prefix}limit`, item.limit, 'Limit', errors, { required: true, positive: true });
+  if (
+    String(item.grossWeight ?? '').trim()
+    && String(item.netWeight ?? '').trim()
+    && Number(item.netWeight) > Number(item.grossWeight)
+  ) {
+    errors[`${prefix}netWeight`] = 'Net weight cannot exceed gross weight.';
+  }
+  if (
+    String(item.amount ?? '').trim()
+    && String(item.limit ?? '').trim()
+    && Number(item.limit) > Number(item.amount)
+  ) {
+    errors[`${prefix}limit`] = 'Item limit cannot exceed the assessed amount.';
+  }
+  return errors;
+}
+
 function validateSecurity(values) {
   const errors = {};
   const security = values.security;
   const key = (field) => `security.${field}`;
 
   validateCode(key('securityId'), security.securityId, 'Security ID', errors, true);
-  validateTextLength(key('securityType'), security.securityType, 'Security type', errors);
   validateCode(key('valuerCode'), security.valuerCode, 'Valuer code', errors, true);
   validateTextLength(key('valuerDescription'), security.valuerDescription, 'Valuer description', errors);
   validatePercentage(key('marginPercent'), security.marginPercent, 'Margin', errors, true);
@@ -457,36 +555,24 @@ function validateSecurity(values) {
     errors['security.inventoryItems'] = 'Enter at least one gold item.';
   }
 
-  filledItems.forEach(({ item, index }) => {
-    const prefix = `security.inventoryItems.${index}.`;
-    validateIdentifier(`${prefix}itemId`, item.itemId, 'Inventory item ID', errors);
-    validateTextLength(`${prefix}ornamentDescription`, item.ornamentDescription, 'Ornament description', errors);
-    validateNumber(`${prefix}grossWeight`, item.grossWeight, 'Gross weight', errors, { required: true, positive: true });
-    validateNumber(`${prefix}netWeight`, item.netWeight, 'Net weight', errors, { required: true, positive: true });
-    validateDate(`${prefix}appraisalDate`, item.appraisalDate, 'Appraisal date', errors, true);
-    if (!['18K', '22K', '24K'].includes(item.purity)) {
-      errors[`${prefix}purity`] = 'Select 18K, 22K, or 24K purity.';
-    }
-    validateNumber(`${prefix}rate`, item.rate, 'Rate', errors, { required: true, positive: true });
-    validateNumber(`${prefix}amount`, item.amount, 'Amount', errors, { required: true, positive: true });
-    validateNumber(`${prefix}limit`, item.limit, 'Item limit', errors, { required: true, positive: true });
-    if (
-      String(item.grossWeight ?? '').trim()
-      && String(item.netWeight ?? '').trim()
-      && Number(item.netWeight) > Number(item.grossWeight)
-    ) {
-      errors[`${prefix}netWeight`] = 'Net weight cannot exceed gross weight.';
-    }
-    if (
-      String(item.amount ?? '').trim()
-      && String(item.limit ?? '').trim()
-      && Number(item.limit) > Number(item.amount)
-    ) {
-      errors[`${prefix}limit`] = 'Item limit cannot exceed the assessed amount.';
-    }
+  security.inventoryItems.forEach((item, index) => {
+    Object.assign(errors, validateInventoryItem(item, index));
   });
-
   return errors;
+}
+
+function getBankAccountNumberError(value) {
+  const accountNumber = String(value ?? '');
+  if (!accountNumber) return 'Account number is required.';
+  if (/\p{L}/u.test(accountNumber)) return 'Only numeric values are allowed.';
+  if (!/^\d+$/.test(accountNumber)) return 'Special characters are not allowed.';
+  if (accountNumber.length < MIN_BANK_ACCOUNT_LENGTH) {
+    return 'Account number must contain at least 9 digits.';
+  }
+  if (accountNumber.length > MAX_BANK_ACCOUNT_LENGTH) {
+    return 'Account number cannot exceed 18 digits.';
+  }
+  return '';
 }
 
 function validateStep(stepIndex, values) {
@@ -497,13 +583,13 @@ function validateStep(stepIndex, values) {
     validateDate('effectiveDate', values.effectiveDate, 'Effective date', errors, true);
     validateIdentifier('customerId', values.customerId, 'Customer ID', errors);
     if (!String(values.title ?? '').trim()) errors.title = 'Title is required.';
-    validateName('firstName', values.firstName, 'First name', errors);
-    validateName('middleName', values.middleName, 'Middle name', errors, false);
-    validateName('lastName', values.lastName, 'Last name', errors);
+    validateName('firstName', values.firstName, 'First name', errors, true, MAX_NAME_LENGTH);
+    validateName('middleName', values.middleName, 'Middle name', errors, false, MAX_NAME_LENGTH);
+    validateName('lastName', values.lastName, 'Last name', errors, true, MAX_NAME_LENGTH);
     validateIdentifier('productCode', values.productCode, 'Product code', errors);
-    validateTextLength('productName', values.productName, 'Product description', errors);
+    validateTextLength('productName', values.productName, 'Product description', errors, true, MIN_TEXT_LENGTH, MAX_DESCRIPTION_LENGTH);
     validateCode('schemeCode', values.schemeCode, 'Scheme code', errors, true);
-    validateTextLength('schemeDescription', values.schemeDescription, 'Scheme description', errors);
+    validateTextLength('schemeDescription', values.schemeDescription, 'Scheme description', errors, true, MIN_TEXT_LENGTH, MAX_DESCRIPTION_LENGTH);
     validateDate('lastTransactionDate', values.lastTransactionDate, 'Last transaction date', errors);
     if (values.lastTransactionDate && isValidDate(values.effectiveDate)
       && isValidDate(values.lastTransactionDate) && values.lastTransactionDate < values.effectiveDate) {
@@ -522,7 +608,19 @@ function validateStep(stepIndex, values) {
   if (stepIndex === 2) {
     validateNumber('sanctionLimit', values.sanctionLimit, 'Sanction limit', errors, { required: true, positive: true });
     validatePercentage('interestRate', values.interestRate, 'Interest rate', errors, true);
-    validateWholeNumber('instalments', values.instalments, 'Number of instalments', errors, { required: true, min: 1, max: 600 });
+    const tenureMaximum = /^\d+$/.test(String(values.tenureMonths ?? ''))
+      ? Math.min(600, Number(values.tenureMonths))
+      : 600;
+    validateWholeNumber('instalments', values.instalments, 'Number of instalments', errors, {
+      required: true,
+      min: 1,
+      max: tenureMaximum,
+    });
+    if (String(values.instalments ?? '').trim()
+      && String(values.tenureMonths ?? '').trim()
+      && Number(values.instalments) > Number(values.tenureMonths)) {
+      errors.instalments = 'Number of instalments cannot exceed the selected tenure.';
+    }
     if (!String(values.emi ?? '').trim()) errors.emi = 'Select Yes or No for EMI.';
     validateDate('sanctionedDate', values.sanctionedDate, 'Sanctioned date', errors, true);
     if (isValidDate(values.effectiveDate) && isValidDate(values.sanctionedDate)
@@ -530,7 +628,7 @@ function validateStep(stepIndex, values) {
       errors.sanctionedDate = 'Sanctioned date cannot precede the effective date.';
     }
     validateWholeNumber('tenureMonths', values.tenureMonths, 'Tenure', errors, { required: true, min: 1, max: 600 });
-    validateName('sanctionAuthority', values.sanctionAuthority, 'Sanction authority', errors);
+    validateName('sanctionAuthority', values.sanctionAuthority, 'Sanction authority', errors, true, MAX_NAME_LENGTH);
     validateNumber('instalmentAmount', values.instalmentAmount, 'Instalment amount', errors, { required: true, positive: true });
     validateDate('expiryDate', values.expiryDate, 'Expiry date', errors, true);
     validateDate('repaymentStartDate', values.repaymentStartDate, 'Repayment start date', errors, true);
@@ -571,7 +669,7 @@ function validateStep(stepIndex, values) {
 
   if (stepIndex === 4) {
     const basic = values.basicDetails;
-    for (const field of ['purposeLoan', 'sectorCode', 'termCode', 'subSectorCode']) {
+    for (const field of ['sectorCode', 'termCode', 'subSectorCode']) {
       validateCode(`basicDetails.${field}`, basic[field], field.replace(/([A-Z])/g, ' $1').toLowerCase(), errors, true);
     }
     if (!['Yes', 'No'].includes(basic.womenSector)) {
@@ -588,17 +686,17 @@ function validateStep(stepIndex, values) {
       if (!String(party.nameType ?? '').trim()) errors[`${prefix}nameType`] = 'Name type is required.';
       validateIdentifier(`${prefix}customerNo`, party.customerNo, 'Customer number', errors);
       if (!String(party.salutation ?? '').trim()) errors[`${prefix}salutation`] = 'Salutation is required.';
-      validateName(`${prefix}firstName`, party.firstName, 'First name', errors);
-      validateName(`${prefix}middleName`, party.middleName, 'Middle name', errors, false);
-      validateName(`${prefix}lastName`, party.lastName, 'Last name', errors);
+      validateName(`${prefix}firstName`, party.firstName, 'First name', errors, true, MAX_NAME_LENGTH);
+      validateName(`${prefix}middleName`, party.middleName, 'Middle name', errors, false, MAX_NAME_LENGTH);
+      validateName(`${prefix}lastName`, party.lastName, 'Last name', errors, true, MAX_NAME_LENGTH);
     });
   }
 
   if (stepIndex === 6) {
     const disbursement = values.disbursement;
-    validateIdentifier('disbursement.accountNumber', disbursement.accountNumber, 'Account number', errors);
-    validateTextLength('disbursement.accountType', disbursement.accountType, 'Type of account', errors);
-    validateTextLength('disbursement.bankName', disbursement.bankName, 'Bank name', errors);
+    const accountNumberError = getBankAccountNumberError(disbursement.accountNumber);
+    if (accountNumberError) errors['disbursement.accountNumber'] = accountNumberError;
+    validateTextLength('disbursement.bankName', disbursement.bankName, 'Bank name', errors, true, MIN_TEXT_LENGTH, MAX_NAME_LENGTH);
     if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(String(disbursement.ifscCode ?? '').trim().toUpperCase())) {
       errors['disbursement.ifscCode'] = 'Enter a valid 11-character IFSC code.';
     }
@@ -649,9 +747,27 @@ function LoanField({
   onInvalidNameInput,
   strictCode = false,
   onInvalidCodeInput,
+  numericOnly = false,
+  onInvalidNumericInput,
+  onInvalidLengthInput,
+  showRequiredOnBlur = true,
 }) {
+  const [showTouchedRequiredError, setShowTouchedRequiredError] = useState(false);
+  const displayedError = error || (
+    showTouchedRequiredError && required && !String(value ?? '').trim()
+      ? `${label} is required.`
+      : ''
+  );
+  const handleValueChange = (nextValue) => {
+    setShowTouchedRequiredError(false);
+    onChange(nextValue);
+  };
   const handleChange = (event) => {
     const nextValue = event.target.value;
+    if (numericOnly && !/^\d*$/.test(nextValue)) {
+      onInvalidNumericInput?.(nextValue);
+      return;
+    }
     if (strictName && !nameInputPattern.test(nextValue)) {
       onInvalidNameInput?.();
       return;
@@ -660,13 +776,16 @@ function LoanField({
       onInvalidCodeInput?.();
       return;
     }
-    if (maxLength && nextValue.length > maxLength) return;
-    onChange(nextValue);
+    if (maxLength && nextValue.length > maxLength) {
+      onInvalidLengthInput?.();
+      return;
+    }
+    handleValueChange(nextValue);
   };
 
   const handleBeforeInput = (event) => {
     if (
-      (!strictName && !strictCode)
+      (!strictName && !strictCode && !numericOnly && !maxLength)
       || !event.nativeEvent.inputType?.startsWith('insert')
     ) return;
     const inserted = event.nativeEvent.data;
@@ -675,9 +794,19 @@ function LoanField({
     const nextValue = value.slice(0, input.selectionStart)
       + inserted
       + value.slice(input.selectionEnd);
+    if (numericOnly && !/^\d+$/.test(inserted)) {
+      event.preventDefault();
+      onInvalidNumericInput?.(inserted);
+      return;
+    }
+    if (maxLength && nextValue.length > maxLength) {
+      event.preventDefault();
+      onInvalidLengthInput?.();
+      return;
+    }
     if (
       strictName
-      && (!nameInputPattern.test(nextValue) || nextValue.length > MAX_TEXT_LENGTH)
+      && !nameInputPattern.test(nextValue)
     ) {
       event.preventDefault();
       onInvalidNameInput?.();
@@ -694,9 +823,19 @@ function LoanField({
     const nextValue = value.slice(0, input.selectionStart)
       + pasted
       + value.slice(input.selectionEnd);
+    if (numericOnly && !/^\d*$/.test(pasted)) {
+      event.preventDefault();
+      onInvalidNumericInput?.(pasted);
+      return;
+    }
+    if (maxLength && nextValue.length > maxLength) {
+      event.preventDefault();
+      onInvalidLengthInput?.();
+      return;
+    }
     if (
       strictName
-      && (!nameInputPattern.test(nextValue) || nextValue.length > MAX_TEXT_LENGTH)
+      && !nameInputPattern.test(nextValue)
     ) {
       event.preventDefault();
       onInvalidNameInput?.();
@@ -706,17 +845,25 @@ function LoanField({
       onInvalidCodeInput?.();
     }
   };
+  const handleBlur = (event) => {
+    if (showRequiredOnBlur
+      && !event.currentTarget.contains(event.relatedTarget)
+      && required
+      && !String(value ?? '').trim()) {
+      setShowTouchedRequiredError(true);
+    }
+  };
 
   return (
-    <label className="loan-field" htmlFor={id}>
-      <span>{label}{required ? ' *' : ''}</span>
+    <label className="loan-field" htmlFor={id} onBlurCapture={handleBlur}>
+      <span>{label}{required ? <> <em>*</em></> : ''}</span>
       {options ? (
         <select
           id={id}
           value={value}
-          onChange={(event) => onChange(event.target.value)}
-          aria-invalid={Boolean(error)}
-          aria-describedby={error ? `${id}-error` : undefined}
+          onChange={(event) => handleValueChange(event.target.value)}
+          aria-invalid={Boolean(displayedError)}
+          aria-describedby={displayedError ? `${id}-error` : undefined}
           required={required}
         >
           <option value="">{placeholder || `Select ${label.toLowerCase()}`}</option>
@@ -724,6 +871,15 @@ function LoanField({
             <option key={option.value} value={option.value}>{option.label}</option>
           ))}
         </select>
+      ) : type === 'date' ? (
+        <LeadDatePicker
+          id={id}
+          label={label}
+          value={value}
+          onChange={handleValueChange}
+          required={required}
+          invalid={Boolean(displayedError)}
+        />
       ) : (
         <input
           id={id}
@@ -739,16 +895,16 @@ function LoanField({
           maxLength={maxLength}
           step={step}
           readOnly={readOnly}
-          inputMode={type === 'number' ? 'decimal' : undefined}
+          inputMode={numericOnly ? 'numeric' : type === 'number' ? 'decimal' : undefined}
           onKeyDown={type === 'number' ? (event) => {
             if (['e', 'E', '+', '-'].includes(event.key)) event.preventDefault();
           } : undefined}
-          aria-invalid={Boolean(error)}
-          aria-describedby={error ? `${id}-error` : undefined}
+          aria-invalid={Boolean(displayedError)}
+          aria-describedby={displayedError ? `${id}-error` : undefined}
           required={required}
         />
       )}
-      {error && <span className="field-error" id={`${id}-error`} role="alert">{error}</span>}
+      {displayedError && <span className="field-error" id={`${id}-error`} role="alert">{displayedError}</span>}
     </label>
   );
 }
@@ -764,6 +920,20 @@ const modesOfOperation = [
   'Other',
 ].map((value) => ({ value, label: value }));
 const yesNoOptions = ['Yes', 'No'].map((value) => ({ value, label: value }));
+const loanPurposeOptions = [
+  'Home purchase',
+  'Home renovation',
+  'Medical expenses',
+  'Education',
+  'Business expansion',
+  'Debt consolidation',
+  'Vehicle purchase',
+  'Other',
+].map((value) => ({ value, label: value }));
+const accountTypeOptions = ['Savings Account', 'Current Account']
+  .map((value) => ({ value, label: value }));
+const securityTypeOptions = ['Gold Jewellery', 'Gold Coins', 'Gold Bars']
+  .map((value) => ({ value, label: value }));
 
 const goldLoanDetailLabels = {
   loanAccountNumber: 'Loan Account Number',
@@ -894,7 +1064,7 @@ export function GoldLoanApplicationView({
     ? [form.firstName, form.middleName, form.lastName].filter(Boolean).join(' ')
     : getCustomerName(application);
   const loanType = application.product || application.loanType || 'Gold Loan';
-  const loanAmount = formatAmount(application.amount || form.sanctionLimit);
+  const loanAmount = formatAmount(form.sanctionLimit || application.amount);
   const populatedParties = form.relatedParties.filter((party) => (
     Object.entries(party).some(([field, value]) => field !== 'id' && hasDetailValue(value))
   ));
@@ -1493,6 +1663,8 @@ export function LoanApplicationFormPage({
   ));
   const [currentStep, setCurrentStep] = useState(0);
   const [validationErrors, setValidationErrors] = useState({});
+  const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
+  const [touchedDisbursementFields, setTouchedDisbursementFields] = useState(() => new Set());
   const [products, setProducts] = useState([]);
   const [productsError, setProductsError] = useState('');
   const [partyToDelete, setPartyToDelete] = useState(null);
@@ -1504,9 +1676,19 @@ export function LoanApplicationFormPage({
     const match = /^party-(\d+)$/.exec(party.id);
     return match ? Math.max(highestId, Number(match[1])) : highestId;
   }, 0));
-  const nextInventoryId = useRef(form.security.inventoryItems.length);
+  const nextInventoryId = useRef(form.security.inventoryItems.reduce((highestId, item) => {
+    const match = /^inventory-(\d+)$/.exec(item.id);
+    return match ? Math.max(highestId, Number(match[1])) : highestId;
+  }, 0));
   const cancelDeleteButtonRef = useRef(null);
   const confirmDeleteButtonRef = useRef(null);
+  const successNavigationTimeout = useRef(null);
+
+  useEffect(() => () => {
+    if (successNavigationTimeout.current) {
+      window.clearTimeout(successNavigationTimeout.current);
+    }
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1545,18 +1727,32 @@ export function LoanApplicationFormPage({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [partyToDelete]);
 
-  const updateForm = (nextForm) => {
+  const updateForm = (nextForm, fieldKeys = [], stepIndex = currentStep) => {
     setForm(nextForm);
     setIsFormDirty(true);
     setShowFrontendSuccess(false);
-    if (Object.keys(validationErrors).length > 0) {
-      setValidationErrors(validateStep(currentStep, nextForm));
-    }
+    if (!fieldKeys.length) return;
+    const stepErrors = validateStep(stepIndex, nextForm);
+    setValidationErrors((previousErrors) => {
+      const nextErrors = { ...previousErrors };
+      fieldKeys.forEach((key) => {
+        if (stepErrors[key]) nextErrors[key] = stepErrors[key];
+        else delete nextErrors[key];
+      });
+      return nextErrors;
+    });
   };
 
   const updateField = (field, value) => {
     const nextForm = { ...form, [field]: value };
-    updateForm(nextForm);
+    const fieldKeys = [field];
+    if (field === 'tenureMonths') {
+      nextForm.charges = { ...form.charges, tenureMonths: value };
+      if (String(form.instalments ?? '').trim() || validationErrors.instalments) {
+        fieldKeys.push('instalments');
+      }
+    }
+    updateForm(nextForm, fieldKeys);
   };
 
   const updateParty = (partyId, field, value) => {
@@ -1565,7 +1761,7 @@ export function LoanApplicationFormPage({
       relatedParties: form.relatedParties.map((party) => (
         party.id === partyId ? { ...party, [field]: value } : party
       )),
-    });
+    }, [`relatedParties.${partyId}.${field}`], 5);
   };
 
   const addRelatedParty = () => {
@@ -1588,10 +1784,16 @@ export function LoanApplicationFormPage({
   };
 
   const removeRelatedParty = (partyId) => {
-    updateForm({
+    const nextForm = {
       ...form,
       relatedParties: form.relatedParties.filter((party) => party.id !== partyId),
-    });
+    };
+    setForm(nextForm);
+    setIsFormDirty(true);
+    setShowFrontendSuccess(false);
+    setValidationErrors((errors) => Object.fromEntries(
+      Object.entries(errors).filter(([key]) => !key.startsWith(`relatedParties.${partyId}.`)),
+    ));
   };
 
   const confirmRemoveRelatedParty = () => {
@@ -1631,6 +1833,7 @@ export function LoanApplicationFormPage({
   const handleSubmit = (event) => {
     event.preventDefault();
     if (isSubmitting) return;
+    setHasAttemptedSubmit(true);
 
     const allErrors = steps.reduce((errors, _, index) => (
       { ...errors, ...validateStep(index, form) }
@@ -1685,6 +1888,10 @@ export function LoanApplicationFormPage({
         onCreate(form);
         setIsFormDirty(false);
         setShowFrontendSuccess(true);
+        successNavigationTimeout.current = window.setTimeout(
+          () => router.push('/gold_loan_application'),
+          1500,
+        );
       } catch (error) {
         setSaveError(
           `Application could not be saved in this browser${error instanceof Error ? `: ${error.message}` : '.'}`,
@@ -1696,7 +1903,8 @@ export function LoanApplicationFormPage({
       return;
     }
 
-    setShowFrontendSuccess(true);
+    setSaveError('Application could not be submitted because the save handler is unavailable.');
+    setShowFrontendSuccess(false);
     setIsSubmitting(false);
   };
 
@@ -1704,11 +1912,13 @@ export function LoanApplicationFormPage({
     const matchedProduct = products.find(
       (product) => String(product.name ?? '').toLowerCase() === name.trim().toLowerCase(),
     );
+    const fieldKeys = ['productName'];
+    if (matchedProduct) fieldKeys.push('productCode');
     updateForm({
       ...form,
       productName: name,
       ...(matchedProduct ? { productCode: String(matchedProduct.id ?? '') } : {}),
-    });
+    }, fieldKeys, 0);
   };
 
   const relatedPartyError = (party, field) => (
@@ -1720,9 +1930,43 @@ export function LoanApplicationFormPage({
   };
 
   const invalidCodeInput = (field) => {
+    if (field.startsWith('disbursement.')) {
+      setTouchedDisbursementFields((fields) => new Set([...fields, field.slice('disbursement.'.length)]));
+    }
     setValidationErrors((errors) => ({
       ...errors,
       [field]: 'Use letters, numbers, hyphens, and underscores only.',
+    }));
+  };
+
+  const invalidNumericInput = (field, attemptedValue) => {
+    if (field.startsWith('disbursement.')) {
+      setTouchedDisbursementFields((fields) => new Set([...fields, field.slice('disbursement.'.length)]));
+    }
+    const message = /\p{L}/u.test(attemptedValue)
+      ? 'Only numeric values are allowed.'
+      : 'Special characters are not allowed.';
+    setValidationErrors((errors) => ({
+      ...errors,
+      [field]: message,
+    }));
+  };
+
+  const invalidAccountNumberLengthInput = () => {
+    setTouchedDisbursementFields((fields) => new Set([...fields, 'accountNumber']));
+    setValidationErrors((errors) => ({
+      ...errors,
+      'disbursement.accountNumber': 'Account number cannot exceed 18 digits.',
+    }));
+  };
+
+  const invalidLengthInput = (field, label, maxLength) => {
+    if (field.startsWith('disbursement.')) {
+      setTouchedDisbursementFields((fields) => new Set([...fields, field.slice('disbursement.'.length)]));
+    }
+    setValidationErrors((errors) => ({
+      ...errors,
+      [field]: `${label} must be ${maxLength} characters or fewer.`,
     }));
   };
 
@@ -1731,31 +1975,90 @@ export function LoanApplicationFormPage({
       ...form,
       [section]: { ...form[section], [field]: value },
     };
-    setForm(nextForm);
-    setIsFormDirty(true);
-    setShowFrontendSuccess(false);
-    if (Object.keys(validationErrors).length > 0) {
-      setValidationErrors(validateStep(currentStep, nextForm));
+    if (section === 'disbursement') {
+      setTouchedDisbursementFields((fields) => new Set([...fields, field]));
     }
+    updateForm(nextForm, [`${section}.${field}`]);
   };
 
+  const disbursementFieldError = (field) => (
+    hasAttemptedSubmit || touchedDisbursementFields.has(field)
+      ? validationErrors[`disbursement.${field}`]
+      : undefined
+  );
+
   const updateInventoryItem = (index, field, value) => {
-    updateSectionField(
-      'security',
-      'inventoryItems',
-      form.security.inventoryItems.map((item, itemIndex) => (
-        itemIndex === index ? { ...item, [field]: value } : item
-      )),
-    );
+    const inventoryItems = form.security.inventoryItems.map((item, itemIndex) => (
+      itemIndex === index ? { ...item, [field]: value } : item
+    ));
+    const limitAvailable = getLimitTotal(inventoryItems);
+    const nextForm = {
+      ...form,
+      sanctionLimit: limitAvailable,
+      charges: { ...form.charges, sanctionLimit: limitAvailable },
+      security: {
+        ...form.security,
+        inventoryItems,
+        limitAvailable,
+      },
+    };
+    const prefix = `security.inventoryItems.${index}.`;
+    const fieldKeys = [`${prefix}${field}`];
+    if (limitAvailable || validationErrors['security.limitAvailable']) {
+      fieldKeys.push('security.limitAvailable');
+    }
+    if (field === 'amount' && String(form.security.inventoryItems[index].limit ?? '').trim()) {
+      fieldKeys.push(`${prefix}limit`);
+    }
+    if (field === 'grossWeight' && String(form.security.inventoryItems[index].netWeight ?? '').trim()) {
+      fieldKeys.push(`${prefix}netWeight`);
+    }
+    updateForm(nextForm, fieldKeys, 1);
   };
 
   const addInventoryItem = () => {
+    const lastIndex = form.security.inventoryItems.length - 1;
+    const rowErrors = validateInventoryItem(
+      form.security.inventoryItems[lastIndex],
+      lastIndex,
+    );
+    if (Object.keys(rowErrors).length > 0) {
+      setValidationErrors((errors) => ({ ...errors, ...rowErrors }));
+      return;
+    }
+
     nextInventoryId.current += 1;
     const nextIndex = nextInventoryId.current;
-    updateSectionField('security', 'inventoryItems', [
-      ...form.security.inventoryItems,
-      {
-        id: `inventory-${nextIndex}`,
+    const nextForm = {
+      ...form,
+      security: {
+        ...form.security,
+        inventoryItems: [
+          ...form.security.inventoryItems,
+          {
+            id: `inventory-${nextIndex}`,
+            itemId: '',
+            ornamentDescription: '',
+            grossWeight: '',
+            netWeight: '',
+            appraisalDate: '',
+            purity: '',
+            rate: '',
+            amount: '',
+            limit: '',
+          },
+        ],
+      },
+    };
+    setForm(nextForm);
+    setIsFormDirty(true);
+    setShowFrontendSuccess(false);
+  };
+
+  const removeInventoryItem = (itemId) => {
+    const remainingItems = form.security.inventoryItems.length === 1
+      ? [{
+        ...form.security.inventoryItems[0],
         itemId: '',
         ornamentDescription: '',
         grossWeight: '',
@@ -1765,16 +2068,31 @@ export function LoanApplicationFormPage({
         rate: '',
         amount: '',
         limit: '',
+      }]
+      : form.security.inventoryItems.filter((item) => item.id !== itemId);
+    const limitAvailable = getLimitTotal(remainingItems);
+    const nextForm = {
+      ...form,
+      sanctionLimit: limitAvailable,
+      charges: { ...form.charges, sanctionLimit: limitAvailable },
+      security: {
+        ...form.security,
+        inventoryItems: remainingItems,
+        limitAvailable,
       },
-    ]);
-  };
-
-  const removeInventoryItem = (itemId) => {
-    updateSectionField(
-      'security',
-      'inventoryItems',
-      form.security.inventoryItems.filter((item) => item.id !== itemId),
-    );
+    };
+    setForm(nextForm);
+    setIsFormDirty(true);
+    setShowFrontendSuccess(false);
+    setValidationErrors((errors) => {
+      const nextErrors = Object.fromEntries(
+        Object.entries(errors).filter(([key]) => !key.startsWith('security.inventoryItems.')),
+      );
+      if (limitAvailable || !errors['security.limitAvailable']) {
+        delete nextErrors['security.limitAvailable'];
+      }
+      return nextErrors;
+    });
   };
 
   const navigateToStep = (targetStep) => {
@@ -1820,16 +2138,18 @@ export function LoanApplicationFormPage({
   return (
     <AppShell>
       <div className="loan-application-shell">
-        <button
-          className="loan-form-back"
-          type="button"
-          onClick={handleReturnToDashboard}
-          aria-label={`Back to ${backLabel}`}
-          title={`Back to ${backLabel}`}
-        >
-          <ArrowLeft size={18} aria-hidden="true" />
-          <span>Back</span>
-        </button>
+        <div className="loan-form-back-row">
+          <button
+            className="loan-form-back"
+            type="button"
+            onClick={handleReturnToDashboard}
+            aria-label={`Back to ${backLabel}`}
+            title={`Back to ${backLabel}`}
+          >
+            <ArrowLeft size={18} aria-hidden="true" />
+            <span>Back</span>
+          </button>
+        </div>
         <PageHeader
           title={isEditMode ? 'Edit Gold Loan Application' : 'Gold Loan Application'}
           description={isEditMode ? `Application ID: ${getApplicationId(application)}` : undefined}
@@ -1873,8 +2193,8 @@ export function LoanApplicationFormPage({
                 {isEditMode
                   ? 'Changes saved in this browser.'
                   : typeof onCreate === 'function'
-                    ? 'Application saved in this browser.'
-                    : 'All fields are valid. This is a frontend preview; no data has been saved.'}
+                    ? 'Gold Loan Application Submitted Successfully.'
+                    : 'Application submitted successfully.'}
               </span>
             </div>
           )}
@@ -1968,8 +2288,9 @@ export function LoanApplicationFormPage({
                       onChange={(value) => updateField('firstName', value)}
                       error={validationErrors.firstName}
                       strictName
-                      maxLength={MAX_TEXT_LENGTH}
+                      maxLength={MAX_NAME_LENGTH}
                       onInvalidNameInput={() => invalidNameInput('firstName')}
+                      onInvalidLengthInput={() => invalidLengthInput('firstName', 'First name', MAX_NAME_LENGTH)}
                       required
                     />
                     <LoanField
@@ -1979,8 +2300,9 @@ export function LoanApplicationFormPage({
                       onChange={(value) => updateField('middleName', value)}
                       error={validationErrors.middleName}
                       strictName
-                      maxLength={MAX_TEXT_LENGTH}
+                      maxLength={MAX_NAME_LENGTH}
                       onInvalidNameInput={() => invalidNameInput('middleName')}
+                      onInvalidLengthInput={() => invalidLengthInput('middleName', 'Middle name', MAX_NAME_LENGTH)}
                     />
                     <LoanField
                       id="lastName"
@@ -1989,8 +2311,9 @@ export function LoanApplicationFormPage({
                       onChange={(value) => updateField('lastName', value)}
                       error={validationErrors.lastName}
                       strictName
-                      maxLength={MAX_TEXT_LENGTH}
+                      maxLength={MAX_NAME_LENGTH}
                       onInvalidNameInput={() => invalidNameInput('lastName')}
+                      onInvalidLengthInput={() => invalidLengthInput('lastName', 'Last name', MAX_NAME_LENGTH)}
                       required
                     />
                   </div>
@@ -2018,7 +2341,8 @@ export function LoanApplicationFormPage({
                       onChange={selectProduct}
                       error={validationErrors.productName}
                       list="loan-product-options"
-                      maxLength={MAX_TEXT_LENGTH}
+                      maxLength={MAX_DESCRIPTION_LENGTH}
+                      onInvalidLengthInput={() => invalidLengthInput('productName', 'Product description', MAX_DESCRIPTION_LENGTH)}
                       required
                     />
                     <LoanField
@@ -2038,7 +2362,8 @@ export function LoanApplicationFormPage({
                       value={form.schemeDescription}
                       onChange={(value) => updateField('schemeDescription', value)}
                       error={validationErrors.schemeDescription}
-                      maxLength={MAX_TEXT_LENGTH}
+                      maxLength={MAX_DESCRIPTION_LENGTH}
+                      onInvalidLengthInput={() => invalidLengthInput('schemeDescription', 'Scheme description', MAX_DESCRIPTION_LENGTH)}
                       required
                     />
                     <LoanField
@@ -2140,8 +2465,9 @@ export function LoanApplicationFormPage({
                                 onChange={(value) => updateParty(party.id, 'firstName', value)}
                                 error={relatedPartyError(party, 'firstName')}
                                 strictName
-                                maxLength={MAX_TEXT_LENGTH}
+                                maxLength={MAX_NAME_LENGTH}
                                 onInvalidNameInput={() => invalidNameInput(`relatedParties.${party.id}.firstName`)}
+                                onInvalidLengthInput={() => invalidLengthInput(`relatedParties.${party.id}.firstName`, 'First name', MAX_NAME_LENGTH)}
                                 required
                               />
                             </td>
@@ -2153,8 +2479,9 @@ export function LoanApplicationFormPage({
                                 onChange={(value) => updateParty(party.id, 'middleName', value)}
                                 error={relatedPartyError(party, 'middleName')}
                                 strictName
-                                maxLength={MAX_TEXT_LENGTH}
+                                maxLength={MAX_NAME_LENGTH}
                                 onInvalidNameInput={() => invalidNameInput(`relatedParties.${party.id}.middleName`)}
+                                onInvalidLengthInput={() => invalidLengthInput(`relatedParties.${party.id}.middleName`, 'Middle name', MAX_NAME_LENGTH)}
                               />
                             </td>
                             <td>
@@ -2165,8 +2492,9 @@ export function LoanApplicationFormPage({
                                 onChange={(value) => updateParty(party.id, 'lastName', value)}
                                 error={relatedPartyError(party, 'lastName')}
                                 strictName
-                                maxLength={MAX_TEXT_LENGTH}
+                                maxLength={MAX_NAME_LENGTH}
                                 onInvalidNameInput={() => invalidNameInput(`relatedParties.${party.id}.lastName`)}
+                                onInvalidLengthInput={() => invalidLengthInput(`relatedParties.${party.id}.lastName`, 'Last name', MAX_NAME_LENGTH)}
                                 required
                               />
                             </td>
@@ -2195,11 +2523,11 @@ export function LoanApplicationFormPage({
                 <h2>Loan Details</h2>
                 <div className="loan-form-section-inner">
                   <div className="loan-form-grid">
-                    <LoanField id="sanctionLimit" label="Sanction Limit (Rs.)" type="number" min="0.01" step="any" value={form.sanctionLimit} onChange={(value) => updateField('sanctionLimit', value)} error={validationErrors.sanctionLimit} required />
+                    <LoanField id="sanctionLimit" label="Sanction Limit (Rs.)" type="number" min="0.01" step="any" value={form.sanctionLimit} error={validationErrors.sanctionLimit} readOnly required />
                     <LoanField id="tenureMonths" label="Tenure (months)" type="number" min="1" max="600" step="1" value={form.tenureMonths} onChange={(value) => updateField('tenureMonths', value)} error={validationErrors.tenureMonths} required />
                     <LoanField id="interestRate" label="Interest Rate (%)" type="number" min="0" max="100" step="any" value={form.interestRate} onChange={(value) => updateField('interestRate', value)} error={validationErrors.interestRate} required />
-                    <LoanField id="sanctionAuthority" label="Sanction Authority" value={form.sanctionAuthority} onChange={(value) => updateField('sanctionAuthority', value)} error={validationErrors.sanctionAuthority} maxLength={MAX_TEXT_LENGTH} required />
-                    <LoanField id="instalments" label="No. of Instalments" type="number" min="1" max="600" step="1" value={form.instalments} onChange={(value) => updateField('instalments', value)} error={validationErrors.instalments} required />
+                    <LoanField id="sanctionAuthority" label="Sanction Authority" value={form.sanctionAuthority} onChange={(value) => updateField('sanctionAuthority', value)} error={validationErrors.sanctionAuthority} maxLength={MAX_NAME_LENGTH} onInvalidLengthInput={() => invalidLengthInput('sanctionAuthority', 'Sanction authority', MAX_NAME_LENGTH)} required />
+                    <LoanField id="instalments" label="No. of Instalments" type="number" min="1" max={form.tenureMonths || 600} step="1" value={form.instalments} onChange={(value) => updateField('instalments', value)} error={validationErrors.instalments} required />
                     <LoanField id="sanctionedDate" label="Sanctioned Date" type="date" value={form.sanctionedDate} onChange={(value) => updateField('sanctionedDate', value)} error={validationErrors.sanctionedDate} required />
                     <LoanField id="emi" label="EMI (Y/N)" value={form.emi} onChange={(value) => updateField('emi', value)} options={yesNoOptions} error={validationErrors.emi} required />
                     <LoanField id="instalmentAmount" label="Instalment Amount (Rs.)" type="number" min="0.01" step="any" value={form.instalmentAmount} onChange={(value) => updateField('instalmentAmount', value)} error={validationErrors.instalmentAmount} required />
@@ -2243,8 +2571,8 @@ export function LoanApplicationFormPage({
                 <h2>Charges &amp; Fees</h2>
                 <div className="loan-form-section-inner">
                   <div className="loan-form-grid">
-                    <LoanField id="chargesSanctionLimit" label="Sanction Limit (Rs.)" type="number" min="0.01" step="any" value={form.charges.sanctionLimit} onChange={(value) => updateSectionField('charges', 'sanctionLimit', value)} error={validationErrors['charges.sanctionLimit']} required />
-                    <LoanField id="chargesTenure" label="Tenure (months)" type="number" min="1" max="600" step="1" value={form.charges.tenureMonths} onChange={(value) => updateSectionField('charges', 'tenureMonths', value)} error={validationErrors['charges.tenureMonths']} required />
+                    <LoanField id="chargesSanctionLimit" label="Sanction Limit (Rs.)" type="number" min="0.01" step="any" value={form.charges.sanctionLimit} error={validationErrors['charges.sanctionLimit']} readOnly required />
+                    <LoanField id="chargesTenure" label="Tenure (months)" type="number" min="1" max="600" step="1" value={form.charges.tenureMonths} error={validationErrors['charges.tenureMonths']} readOnly required />
                     <LoanField id="processingFees" label="Processing Fees (Rs.)" type="number" min="0" step="any" value={form.charges.processingFees} onChange={(value) => updateSectionField('charges', 'processingFees', value)} error={validationErrors['charges.processingFees']} required />
                     <LoanField id="valuationCharges" label="Valuation Charges (Rs.)" type="number" min="0" step="any" value={form.charges.valuationCharges} onChange={(value) => updateSectionField('charges', 'valuationCharges', value)} error={validationErrors['charges.valuationCharges']} required />
                     <LoanField id="penalInterestPercent" label="Penal Interest (%)" type="number" min="0" max="100" step="any" value={form.charges.penalInterestPercent} onChange={(value) => updateSectionField('charges', 'penalInterestPercent', value)} error={validationErrors['charges.penalInterestPercent']} required />
@@ -2263,11 +2591,11 @@ export function LoanApplicationFormPage({
                       label="Purpose of Loan"
                       value={form.basicDetails.purposeLoan}
                       onChange={(value) => updateSectionField('basicDetails', 'purposeLoan', value)}
+                      options={form.basicDetails.purposeLoan
+                        && !loanPurposeOptions.some(({ value }) => value === form.basicDetails.purposeLoan)
+                        ? [{ value: form.basicDetails.purposeLoan, label: form.basicDetails.purposeLoan }, ...loanPurposeOptions]
+                        : loanPurposeOptions}
                       error={validationErrors['basicDetails.purposeLoan']}
-                      maxLength={30}
-                      strictCode
-                      onInvalidCodeInput={() => invalidCodeInput('basicDetails.purposeLoan')}
-                      required
                     />
                     <LoanField
                       id="sectorCode"
@@ -2322,7 +2650,16 @@ export function LoanApplicationFormPage({
                 <div className="loan-form-section-inner">
                   <div className="loan-form-grid">
                     <LoanField id="securityId" label="Security ID" value={form.security.securityId} onChange={(value) => updateSectionField('security', 'securityId', value)} error={validationErrors['security.securityId']} maxLength={30} strictCode onInvalidCodeInput={() => invalidCodeInput('security.securityId')} required />
-                    <LoanField id="securityType" label="Security Type" value={form.security.securityType} onChange={(value) => updateSectionField('security', 'securityType', value)} error={validationErrors['security.securityType']} maxLength={MAX_TEXT_LENGTH} required />
+                    <LoanField
+                      id="securityType"
+                      label="Security Type"
+                      value={form.security.securityType}
+                      onChange={(value) => updateSectionField('security', 'securityType', value)}
+                      options={form.security.securityType
+                        && !securityTypeOptions.some(({ value }) => value === form.security.securityType)
+                        ? [{ value: form.security.securityType, label: form.security.securityType }, ...securityTypeOptions]
+                        : securityTypeOptions}
+                    />
                     <LoanField id="valuerCode" label="Valuer Code" value={form.security.valuerCode} onChange={(value) => updateSectionField('security', 'valuerCode', value)} error={validationErrors['security.valuerCode']} maxLength={30} strictCode onInvalidCodeInput={() => invalidCodeInput('security.valuerCode')} required />
                     <LoanField id="valuerDescription" label="Valuer Description" value={form.security.valuerDescription} onChange={(value) => updateSectionField('security', 'valuerDescription', value)} error={validationErrors['security.valuerDescription']} maxLength={MAX_TEXT_LENGTH} required />
                   </div>
@@ -2353,7 +2690,7 @@ export function LoanApplicationFormPage({
                             <tr key={item.id}>
                               <td>{index + 1}</td>
                               <td><LoanField id={`${item.id}-itemId`} label="Inventory Item ID" value={item.itemId} onChange={(value) => updateInventoryItem(index, 'itemId', value)} error={fieldError('itemId')} required /></td>
-                              <td><LoanField id={`${item.id}-description`} label="Ornament Description" value={item.ornamentDescription} onChange={(value) => updateInventoryItem(index, 'ornamentDescription', value)} error={fieldError('ornamentDescription')} maxLength={MAX_TEXT_LENGTH} required /></td>
+                              <td><LoanField id={`${item.id}-description`} label="Ornament Description" value={item.ornamentDescription} onChange={(value) => updateInventoryItem(index, 'ornamentDescription', value)} error={fieldError('ornamentDescription')} maxLength={MAX_DESCRIPTION_LENGTH} onInvalidLengthInput={() => invalidLengthInput(`security.inventoryItems.${index}.ornamentDescription`, 'Ornament description', MAX_DESCRIPTION_LENGTH)} required /></td>
                               <td><LoanField id={`${item.id}-grossWeight`} label="Gross Weight" type="number" min="0.01" step="any" value={item.grossWeight} onChange={(value) => updateInventoryItem(index, 'grossWeight', value)} error={fieldError('grossWeight')} required /></td>
                               <td><LoanField id={`${item.id}-netWeight`} label="Net Weight" type="number" min="0.01" step="any" value={item.netWeight} onChange={(value) => updateInventoryItem(index, 'netWeight', value)} error={fieldError('netWeight')} required /></td>
                               <td><LoanField id={`${item.id}-appraisalDate`} label="Appraisal Date" type="date" value={item.appraisalDate} onChange={(value) => updateInventoryItem(index, 'appraisalDate', value)} error={fieldError('appraisalDate')} required /></td>
@@ -2389,7 +2726,7 @@ export function LoanApplicationFormPage({
                 <div className="loan-form-section-inner">
                   <div className="loan-form-grid">
                     <LoanField id="marginPercent" label="Margin (%)" type="number" min="0" max="100" step="any" value={form.security.marginPercent} onChange={(value) => updateSectionField('security', 'marginPercent', value)} error={validationErrors['security.marginPercent']} required />
-                    <LoanField id="limitAvailable" label="Limit Available for Sanction (Rs.)" type="number" min="0.01" step="any" value={form.security.limitAvailable} onChange={(value) => updateSectionField('security', 'limitAvailable', value)} error={validationErrors['security.limitAvailable']} required />
+                    <LoanField id="limitAvailable" label="Limit Available for Sanction (Rs.)" type="number" min="0.01" step="any" value={form.security.limitAvailable} error={validationErrors['security.limitAvailable']} readOnly required />
                   </div>
                 </div>
               </div>
@@ -2400,14 +2737,35 @@ export function LoanApplicationFormPage({
                 <h2>Disbursement</h2>
                 <div className="loan-form-section-inner">
                   <div className="loan-form-grid">
-                    <LoanField id="disbursementAccountNumber" label="Account Number" value={form.disbursement.accountNumber} onChange={(value) => updateSectionField('disbursement', 'accountNumber', value)} error={validationErrors['disbursement.accountNumber']} maxLength={34} strictCode onInvalidCodeInput={() => invalidCodeInput('disbursement.accountNumber')} required />
-                    <LoanField id="disbursementMode" label="Mode of Disbursement" value={form.disbursement.mode} onChange={(value) => updateSectionField('disbursement', 'mode', value)} options={['Internal Transfer', 'NEFT', 'RTGS', 'IMPS', 'Pay Check'].map((value) => ({ value, label: value }))} error={validationErrors['disbursement.mode']} required />
-                    <LoanField id="disbursementAccountType" label="Type of Account" value={form.disbursement.accountType} onChange={(value) => updateSectionField('disbursement', 'accountType', value)} error={validationErrors['disbursement.accountType']} maxLength={MAX_TEXT_LENGTH} required />
-                    <LoanField id="disbursementType" label="Disbursement Type" value={form.disbursement.type} onChange={(value) => updateSectionField('disbursement', 'type', value)} options={['Full', 'Partial'].map((value) => ({ value, label: value }))} error={validationErrors['disbursement.type']} required />
-                    <LoanField id="disbursementBankName" label="Bank Name" value={form.disbursement.bankName} onChange={(value) => updateSectionField('disbursement', 'bankName', value)} error={validationErrors['disbursement.bankName']} maxLength={MAX_TEXT_LENGTH} required />
-                    <LoanField id="disbursementAmount" label="Disbursement Amount (Rs.)" type="number" min="0.01" step="any" value={form.disbursement.amount} onChange={(value) => updateSectionField('disbursement', 'amount', value)} error={validationErrors['disbursement.amount']} required />
-                    <LoanField id="disbursementIfsc" label="IFSC Code" value={form.disbursement.ifscCode} onChange={(value) => updateSectionField('disbursement', 'ifscCode', value.toUpperCase())} error={validationErrors['disbursement.ifscCode']} maxLength={11} strictCode onInvalidCodeInput={() => invalidCodeInput('disbursement.ifscCode')} required />
-                    <LoanField id="disbursementMobile" label="Mobile Number" type="tel" value={form.disbursement.mobileNumber} onChange={(value) => updateSectionField('disbursement', 'mobileNumber', value.replace(/\D/g, '').slice(0, 10))} error={validationErrors['disbursement.mobileNumber']} maxLength={10} required />
+                    <LoanField
+                      id="disbursementAccountNumber"
+                      label="Account Number"
+                      value={form.disbursement.accountNumber}
+                      onChange={(value) => updateSectionField('disbursement', 'accountNumber', value)}
+                      error={disbursementFieldError('accountNumber')}
+                      maxLength={MAX_BANK_ACCOUNT_LENGTH}
+                      numericOnly
+                      onInvalidNumericInput={(attemptedValue) => invalidNumericInput('disbursement.accountNumber', attemptedValue)}
+                      onInvalidLengthInput={invalidAccountNumberLengthInput}
+                      required
+                    />
+                    <LoanField id="disbursementMode" label="Mode of Disbursement" value={form.disbursement.mode} onChange={(value) => updateSectionField('disbursement', 'mode', value)} options={['Internal Transfer', 'NEFT', 'RTGS', 'IMPS', 'Pay Check'].map((value) => ({ value, label: value }))} error={disbursementFieldError('mode')} required />
+                    <LoanField
+                      id="disbursementAccountType"
+                      label="Type of Account"
+                      value={form.disbursement.accountType}
+                      onChange={(value) => updateSectionField('disbursement', 'accountType', value)}
+                      options={form.disbursement.accountType
+                        && !accountTypeOptions.some(({ value }) => value === form.disbursement.accountType)
+                        ? [{ value: form.disbursement.accountType, label: form.disbursement.accountType }, ...accountTypeOptions]
+                        : accountTypeOptions}
+                      error={disbursementFieldError('accountType')}
+                    />
+                    <LoanField id="disbursementType" label="Disbursement Type" value={form.disbursement.type} onChange={(value) => updateSectionField('disbursement', 'type', value)} options={['Full', 'Partial'].map((value) => ({ value, label: value }))} error={disbursementFieldError('type')} required />
+                    <LoanField id="disbursementBankName" label="Bank Name" value={form.disbursement.bankName} onChange={(value) => updateSectionField('disbursement', 'bankName', value)} error={disbursementFieldError('bankName')} maxLength={MAX_NAME_LENGTH} onInvalidLengthInput={() => invalidLengthInput('disbursement.bankName', 'Bank name', MAX_NAME_LENGTH)} required />
+                    <LoanField id="disbursementAmount" label="Disbursement Amount (Rs.)" type="number" min="0.01" step="any" value={form.disbursement.amount} onChange={(value) => updateSectionField('disbursement', 'amount', value)} error={disbursementFieldError('amount')} required />
+                    <LoanField id="disbursementIfsc" label="IFSC Code" value={form.disbursement.ifscCode} onChange={(value) => updateSectionField('disbursement', 'ifscCode', value.toUpperCase())} error={disbursementFieldError('ifscCode')} maxLength={11} strictCode onInvalidCodeInput={() => invalidCodeInput('disbursement.ifscCode')} required />
+                    <LoanField id="disbursementMobile" label="Mobile Number" type="tel" value={form.disbursement.mobileNumber} onChange={(value) => updateSectionField('disbursement', 'mobileNumber', value.replace(/\D/g, '').slice(0, 10))} error={disbursementFieldError('mobileNumber')} maxLength={10} required />
                   </div>
                 </div>
               </div>
@@ -2492,10 +2850,10 @@ export function LoanApplicationFormPage({
             min-height: 38px;
             margin-bottom: 12px;
             padding: 0 13px;
-            border: 1px solid #dfe8e8;
+            border: 1px solid #d2dfe2;
             border-radius: 8px;
-            background: #fff;
-            color: #405d61;
+            background: #f7f9fa;
+            color: #1d3b48;
             font: inherit;
             font-size: 13px;
             font-weight: 650;
@@ -2506,6 +2864,11 @@ export function LoanApplicationFormPage({
             border-color: #b8d4cf;
             background: #f4faf9;
             color: #177e7a;
+          }
+
+          .loan-form-back-row {
+            display: flex;
+            justify-content: flex-end;
           }
 
           :global(.loan-dashboard-back:hover) {
@@ -2596,6 +2959,18 @@ export function LoanApplicationFormPage({
 
           .loan-form-panel {
             min-width: 0;
+          }
+
+          :global(.loan-field em) {
+            color: #dc2626;
+            font-style: normal;
+          }
+
+          :global(.loan-primary-btn) {
+            background: #177e7a;
+            border-color: #177e7a;
+            color: #fff;
+            box-shadow: 0 6px 18px rgba(23, 126, 122, 0.18);
           }
 
           .borrower-information-grid {
